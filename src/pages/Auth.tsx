@@ -51,14 +51,26 @@ export default function Auth() {
     setIsLoading(false);
   };
 
+  // Password validation regex: at least 8 chars, 1 uppercase, 1 lowercase, 1 number
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!passwordRegex.test(password)) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: t('passwordTooWeak'),
+      });
+      return;
+    }
     
     if (password !== confirmPassword) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Passwords do not match',
+        description: t('passwordsDoNotMatch'),
       });
       return;
     }
@@ -288,9 +300,12 @@ export default function Auth() {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           required
-                          minLength={6}
+                          minLength={8}
                           className="bg-background"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          {t('passwordRequirements')}
+                        </p>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
