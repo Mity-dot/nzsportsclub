@@ -36,6 +36,12 @@ const translations: Translations = {
   resetPasswordSent: { en: 'Password reset email sent! Check your inbox.', bg: 'Имейлът за нулиране на паролата е изпратен! Проверете пощата си.' },
   sendResetLink: { en: 'Send Reset Link', bg: 'Изпрати линк за нулиране' },
   backToLogin: { en: 'Back to Login', bg: 'Обратно към вход' },
+  updatePassword: { en: 'Update Password', bg: 'Актуализирай парола' },
+  newPassword: { en: 'New Password', bg: 'Нова парола' },
+  enterNewPassword: { en: 'Enter your new password', bg: 'Въведете новата си парола' },
+  passwordUpdated: { en: 'Password updated successfully!', bg: 'Паролата е актуализирана успешно!' },
+  enterEmailForReset: { en: 'Enter your email to receive a reset link', bg: 'Въведете имейла си, за да получите линк за нулиране' },
+  invalidEmail: { en: 'Please enter a valid email address', bg: 'Моля, въведете валиден имейл адрес' },
   
   // Member types
   member: { en: 'Member', bg: 'Член' },
