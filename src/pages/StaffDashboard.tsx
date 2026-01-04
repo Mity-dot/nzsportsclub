@@ -39,10 +39,9 @@ interface Workout {
 interface Profile {
   id: string;
   user_id: string;
-  email: string;
   full_name: string | null;
   member_type: string;
-  is_regular_attendee: boolean;
+  card_image_url: string | null;
 }
 
 interface Reservation {
@@ -121,9 +120,10 @@ export default function StaffDashboard() {
   };
 
   const fetchMembers = async () => {
+    // Staff only see limited profile data: names and card info (not emails/phones)
     const { data } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, user_id, full_name, member_type, card_image_url')
       .order('full_name');
     
     if (data) setMembers(data as Profile[]);
@@ -147,11 +147,11 @@ export default function StaffDashboard() {
       .eq('is_active', true);
     
     if (reservations) {
-      // Fetch profiles for each reservation
+      // Fetch limited profiles for each reservation (names and card info only)
       const userIds = reservations.map(r => r.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('*')
+        .select('id, user_id, full_name, member_type, card_image_url')
         .in('user_id', userIds);
       
       const reservationsWithProfiles = reservations.map(r => ({
@@ -525,18 +525,17 @@ export default function StaffDashboard() {
                   <CardContent className="p-4 flex items-center justify-between">
                     <div>
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{member.full_name || member.email}</span>
+                        <span className="font-medium">{member.full_name || 'Member'}</span>
                         {member.member_type === 'card' && (
                           <Badge className="bg-primary/20">
                             <Crown className="h-3 w-3 mr-1" />
                             {t('cardMember')}
                           </Badge>
                         )}
-                        {member.is_regular_attendee && (
-                          <Badge variant="outline">{t('regularAttendee')}</Badge>
-                        )}
                       </div>
-                      <p className="text-sm text-muted-foreground">{member.email}</p>
+                      {member.card_image_url && (
+                        <p className="text-xs text-muted-foreground mt-1">Has card image</p>
+                      )}
                     </div>
                     {isAdmin && (
                       <Button
@@ -605,7 +604,7 @@ export default function StaffDashboard() {
                 workoutReservations.map((res) => (
                   <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div>
-                      <p className="font-medium">{res.profiles?.full_name || res.profiles?.email}</p>
+                      <p className="font-medium">{res.profiles?.full_name || 'Member'}</p>
                       {res.profiles?.member_type === 'card' && (
                         <Badge className="bg-primary/20 text-xs">
                           <Crown className="h-3 w-3 mr-1" />
