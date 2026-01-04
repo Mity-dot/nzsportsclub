@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,10 +14,11 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Calendar, Clock, Users, 
-  UserCheck, UserX, CheckCircle, XCircle, Crown
+  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -33,6 +34,7 @@ interface Workout {
   end_time: string;
   max_spots: number;
   card_priority_enabled: boolean;
+  reservation_opens_hours: number;
   created_by: string;
 }
 
@@ -44,18 +46,18 @@ interface Profile {
   card_image_url: string | null;
 }
 
+interface UserRole {
+  id: string;
+  user_id: string;
+  role: string;
+  is_approved: boolean;
+}
+
 interface Reservation {
   id: string;
   workout_id: string;
   user_id: string;
   profiles?: Profile;
-}
-
-interface Attendance {
-  id: string;
-  workout_id: string;
-  user_id: string;
-  attended: boolean;
 }
 
 interface PendingApproval {
@@ -66,6 +68,10 @@ interface PendingApproval {
   requested_at: string;
 }
 
+interface MemberWithRole extends Profile {
+  roles: UserRole[];
+}
+
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
@@ -73,7 +79,7 @@ export default function StaffDashboard() {
   const { toast } = useToast();
   
   const [workouts, setWorkouts] = useState<Workout[]>([]);
-  const [members, setMembers] = useState<Profile[]>([]);
+  const [members, setMembers] = useState<MemberWithRole[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [workoutReservations, setWorkoutReservations] = useState<Reservation[]>([]);
@@ -92,6 +98,7 @@ export default function StaffDashboard() {
     end_time: '10:00',
     max_spots: 10,
     card_priority_enabled: true,
+    reservation_opens_hours: 24,
   });
 
   useEffect(() => {
@@ -120,13 +127,25 @@ export default function StaffDashboard() {
   };
 
   const fetchMembers = async () => {
-    // Staff only see limited profile data: names and card info (not emails/phones)
-    const { data } = await supabase
+    // Fetch profiles with limited data
+    const { data: profiles } = await supabase
       .from('profiles')
       .select('id, user_id, full_name, member_type, card_image_url')
       .order('full_name');
     
-    if (data) setMembers(data as Profile[]);
+    if (profiles) {
+      // Fetch roles for each profile
+      const { data: roles } = await supabase
+        .from('user_roles')
+        .select('*');
+      
+      const membersWithRoles: MemberWithRole[] = profiles.map(p => ({
+        ...p,
+        roles: roles?.filter(r => r.user_id === p.user_id) || []
+      }));
+      
+      setMembers(membersWithRoles);
+    }
   };
 
   const fetchPendingApprovals = async () => {
@@ -147,7 +166,6 @@ export default function StaffDashboard() {
       .eq('is_active', true);
     
     if (reservations) {
-      // Fetch limited profiles for each reservation (names and card info only)
       const userIds = reservations.map(r => r.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
@@ -162,7 +180,6 @@ export default function StaffDashboard() {
       setWorkoutReservations(reservationsWithProfiles as Reservation[]);
     }
     
-    // Fetch attendance
     const { data: attendance } = await supabase
       .from('attendance')
       .select('*')
@@ -171,7 +188,7 @@ export default function StaffDashboard() {
     if (attendance) {
       const attendanceMap: Record<string, boolean> = {};
       attendance.forEach(a => {
-        attendanceMap[a.user_id] = a.attended;
+        attendanceMap[a.user_id] = a.attended ?? false;
       });
       setWorkoutAttendance(attendanceMap);
     }
@@ -252,7 +269,6 @@ export default function StaffDashboard() {
   const handleApproveStaff = async (approval: PendingApproval) => {
     if (!user) return;
     
-    // Update user role to approved
     const { error: roleError } = await supabase
       .from('user_roles')
       .update({ is_approved: true, approved_by: user.id, approved_at: new Date().toISOString() })
@@ -264,7 +280,6 @@ export default function StaffDashboard() {
       return;
     }
     
-    // Mark approval as processed
     await supabase
       .from('pending_staff_approvals')
       .update({ is_processed: true })
@@ -272,21 +287,106 @@ export default function StaffDashboard() {
     
     toast({ title: 'Staff approved!' });
     fetchPendingApprovals();
+    fetchMembers();
   };
 
-  const handleRemoveMember = async (userId: string) => {
-    // This would delete the profile and user role
+  const handleRemoveMember = async (member: MemberWithRole) => {
+    // Delete user roles first
+    await supabase
+      .from('user_roles')
+      .delete()
+      .eq('user_id', member.user_id);
+    
+    // Delete profile
     const { error } = await supabase
       .from('profiles')
       .delete()
-      .eq('user_id', userId);
+      .eq('user_id', member.user_id);
     
     if (error) {
       toast({ variant: 'destructive', title: 'Error', description: error.message });
     } else {
-      toast({ title: 'Member removed' });
+      toast({ title: t('memberRemoved') });
       fetchMembers();
     }
+  };
+
+  const handlePromoteToCard = async (member: MemberWithRole) => {
+    // Update profile member_type
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ member_type: 'card' })
+      .eq('user_id', member.user_id);
+    
+    if (profileError) {
+      toast({ variant: 'destructive', title: 'Error', description: profileError.message });
+      return;
+    }
+    
+    // Update role to card_member
+    const memberRole = member.roles.find(r => r.role === 'member');
+    if (memberRole) {
+      await supabase
+        .from('user_roles')
+        .update({ role: 'card_member' })
+        .eq('id', memberRole.id);
+    }
+    
+    toast({ title: t('memberPromoted') });
+    fetchMembers();
+  };
+
+  const handleDemoteToMember = async (member: MemberWithRole) => {
+    // Update profile member_type
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ member_type: 'regular' })
+      .eq('user_id', member.user_id);
+    
+    if (profileError) {
+      toast({ variant: 'destructive', title: 'Error', description: profileError.message });
+      return;
+    }
+    
+    // Update role to member
+    const cardRole = member.roles.find(r => r.role === 'card_member');
+    if (cardRole) {
+      await supabase
+        .from('user_roles')
+        .update({ role: 'member' })
+        .eq('id', cardRole.id);
+    }
+    
+    toast({ title: t('memberDemoted') });
+    fetchMembers();
+  };
+
+  const handleRemoveStaff = async (member: MemberWithRole) => {
+    const staffRole = member.roles.find(r => r.role === 'staff');
+    if (staffRole) {
+      const { error } = await supabase
+        .from('user_roles')
+        .delete()
+        .eq('id', staffRole.id);
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Error', description: error.message });
+      } else {
+        toast({ title: t('staffRemoved') });
+        fetchMembers();
+      }
+    }
+  };
+
+  const getMemberStatus = (member: MemberWithRole) => {
+    const isStaffMember = member.roles.some(r => r.role === 'staff' && r.is_approved);
+    const isCardMember = member.member_type === 'card' || member.roles.some(r => r.role === 'card_member');
+    const isActive = member.roles.some(r => r.is_approved);
+    
+    if (isStaffMember) return 'staff';
+    if (isCardMember) return 'card';
+    if (isActive) return 'member';
+    return 'inactive';
   };
 
   const resetWorkoutForm = () => {
@@ -300,6 +400,7 @@ export default function StaffDashboard() {
       end_time: '10:00',
       max_spots: 10,
       card_priority_enabled: true,
+      reservation_opens_hours: 24,
     });
   };
 
@@ -315,6 +416,7 @@ export default function StaffDashboard() {
       end_time: workout.end_time,
       max_spots: workout.max_spots,
       card_priority_enabled: workout.card_priority_enabled,
+      reservation_opens_hours: workout.reservation_opens_hours || 24,
     });
     setShowWorkoutDialog(true);
   };
@@ -448,6 +550,18 @@ export default function StaffDashboard() {
                         onChange={(e) => setWorkoutForm(f => ({ ...f, max_spots: parseInt(e.target.value) || 1 }))}
                       />
                     </div>
+                    <div className="space-y-2">
+                      <Label>{t('reservationOpensHours')}</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={workoutForm.reservation_opens_hours}
+                        onChange={(e) => setWorkoutForm(f => ({ ...f, reservation_opens_hours: parseInt(e.target.value) || 24 }))}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {t('cardPriorityPeriod')}: {Math.floor(workoutForm.reservation_opens_hours / 2)} {language === 'bg' ? 'часа' : 'hours'}
+                      </p>
+                    </div>
                     <div className="flex items-center justify-between">
                       <Label>{t('cardPriority')}</Label>
                       <Switch
@@ -489,6 +603,12 @@ export default function StaffDashboard() {
                             {workout.max_spots} spots
                           </span>
                         </div>
+                        {workout.card_priority_enabled && (
+                          <Badge variant="outline" className="text-xs">
+                            <Crown className="h-3 w-3 mr-1" />
+                            {t('cardPriority')}
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -520,36 +640,75 @@ export default function StaffDashboard() {
           <TabsContent value="members" className="space-y-4">
             <h2 className="font-display text-xl font-medium">{t('manageMembers')}</h2>
             <div className="grid gap-3">
-              {members.map((member) => (
-                <Card key={member.id} className="border-border/50">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{member.full_name || 'Member'}</span>
-                        {member.member_type === 'card' && (
-                          <Badge className="bg-primary/20">
-                            <Crown className="h-3 w-3 mr-1" />
-                            {t('cardMember')}
-                          </Badge>
+              {members.map((member) => {
+                const status = getMemberStatus(member);
+                return (
+                  <Card key={member.id} className="border-border/50">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {member.card_image_url && (
+                          <img 
+                            src={member.card_image_url} 
+                            alt="Card" 
+                            className="h-10 w-10 rounded object-cover"
+                          />
                         )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{member.full_name || 'Member'}</span>
+                            {status === 'card' && (
+                              <Badge className="bg-primary/20">
+                                <Crown className="h-3 w-3 mr-1" />
+                                {t('cardMember')}
+                              </Badge>
+                            )}
+                            {status === 'staff' && (
+                              <Badge variant="outline">{t('staff')}</Badge>
+                            )}
+                            {status === 'inactive' && (
+                              <Badge variant="secondary">{t('inactive')}</Badge>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      {member.card_image_url && (
-                        <p className="text-xs text-muted-foreground mt-1">Has card image</p>
-                      )}
-                    </div>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveMember(member.user_id)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {status === 'member' && (
+                            <DropdownMenuItem onClick={() => handlePromoteToCard(member)}>
+                              <ArrowUp className="h-4 w-4 mr-2" />
+                              {t('promoteToCard')}
+                            </DropdownMenuItem>
+                          )}
+                          {status === 'card' && (
+                            <DropdownMenuItem onClick={() => handleDemoteToMember(member)}>
+                              <ArrowDown className="h-4 w-4 mr-2" />
+                              {t('demoteToMember')}
+                            </DropdownMenuItem>
+                          )}
+                          {status === 'staff' && (
+                            <DropdownMenuItem onClick={() => handleRemoveStaff(member)}>
+                              <UserMinus className="h-4 w-4 mr-2" />
+                              {t('removeStaff')}
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem 
+                            onClick={() => handleRemoveMember(member)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            {t('removeMember')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           </TabsContent>
 

@@ -240,6 +240,7 @@ export type Database = {
           end_time: string
           id: string
           max_spots: number
+          reservation_opens_hours: number | null
           start_time: string
           title: string
           title_bg: string | null
@@ -255,6 +256,7 @@ export type Database = {
           end_time: string
           id?: string
           max_spots?: number
+          reservation_opens_hours?: number | null
           start_time: string
           title: string
           title_bg?: string | null
@@ -270,6 +272,7 @@ export type Database = {
           end_time?: string
           id?: string
           max_spots?: number
+          reservation_opens_hours?: number | null
           start_time?: string
           title?: string
           title_bg?: string | null

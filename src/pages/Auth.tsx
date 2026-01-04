@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { User, CreditCard, Users, Shield, ArrowLeft, Camera } from 'lucide-react';
+import { User, CreditCard, Users, ArrowLeft, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 type SignUpType = 'member' | 'card_member' | 'staff' | null;
@@ -23,6 +25,7 @@ export default function Auth() {
   
   const [isLoading, setIsLoading] = useState(false);
   const [signUpType, setSignUpType] = useState<SignUpType>(null);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
   
   // Form states
   const [email, setEmail] = useState('');
@@ -31,11 +34,15 @@ export default function Auth() {
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [cardImage, setCardImage] = useState<string | null>(null);
+  const [rememberMe, setRememberMe] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
+    // If remember me is checked, we'll rely on Supabase's persistent session
+    // The session is already persistent by default in our client config
     const { error } = await signIn(email, password);
     
     if (error) {
@@ -45,7 +52,38 @@ export default function Auth() {
         description: error.message,
       });
     } else {
+      // Store remember me preference
+      if (rememberMe) {
+        localStorage.setItem('nz-remember-me', 'true');
+      } else {
+        localStorage.removeItem('nz-remember-me');
+      }
       navigate('/');
+    }
+    
+    setIsLoading(false);
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `${window.location.origin}/auth`,
+    });
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } else {
+      toast({
+        title: t('resetPasswordSent'),
+      });
+      setShowForgotPassword(false);
+      setForgotEmail('');
     }
     
     setIsLoading(false);
@@ -99,6 +137,10 @@ export default function Auth() {
         description: error.message,
       });
     } else {
+      // Store remember me preference on signup too
+      if (rememberMe) {
+        localStorage.setItem('nz-remember-me', 'true');
+      }
       toast({
         title: t('signUpSuccess'),
         description: signUpType === 'staff' ? t('staffPending') : undefined,
@@ -151,6 +193,61 @@ export default function Auth() {
     },
   ];
 
+  // Forgot Password Form
+  if (showForgotPassword) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-secondary/30 px-4 py-8">
+        <div className="absolute top-4 right-4">
+          <LanguageSelector variant="minimal" />
+        </div>
+        
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md"
+        >
+          <div className="flex justify-center mb-6">
+            <Logo size="md" />
+          </div>
+          
+          <Card className="border-border/50 shadow-elegant">
+            <CardHeader className="text-center">
+              <CardTitle className="font-display text-2xl">{t('resetPassword')}</CardTitle>
+              <CardDescription>{t('email')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleForgotPassword} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="forgotEmail">{t('email')}</Label>
+                  <Input
+                    id="forgotEmail"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    required
+                    className="bg-background"
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t('loading') : t('sendResetLink')}
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="ghost" 
+                  className="w-full"
+                  onClick={() => setShowForgotPassword(false)}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  {t('backToLogin')}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-secondary/30 px-4 py-8">
       <div className="absolute top-4 right-4">
@@ -201,6 +298,25 @@ export default function Auth() {
                       required
                       className="bg-background"
                     />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox 
+                        id="rememberMe" 
+                        checked={rememberMe}
+                        onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                      />
+                      <Label htmlFor="rememberMe" className="text-sm cursor-pointer">
+                        {t('rememberMe')}
+                      </Label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPassword(true)}
+                      className="text-sm text-primary hover:underline"
+                    >
+                      {t('forgotPassword')}
+                    </button>
                   </div>
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? t('loading') : t('signIn')}
@@ -337,6 +453,17 @@ export default function Auth() {
                           </div>
                         </div>
                       )}
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox 
+                          id="rememberMeSignup" 
+                          checked={rememberMe}
+                          onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+                        />
+                        <Label htmlFor="rememberMeSignup" className="text-sm cursor-pointer">
+                          {t('rememberMe')}
+                        </Label>
+                      </div>
                       
                       <Button type="submit" className="w-full" disabled={isLoading}>
                         {isLoading ? t('loading') : t('signUp')}

@@ -30,12 +30,19 @@ const translations: Translations = {
   confirmPassword: { en: 'Confirm Password', bg: 'Потвърди парола' },
   fullName: { en: 'Full Name', bg: 'Пълно име' },
   phone: { en: 'Phone', bg: 'Телефон' },
+  rememberMe: { en: 'Remember me', bg: 'Запомни ме' },
+  forgotPassword: { en: 'Forgot password?', bg: 'Забравена парола?' },
+  resetPassword: { en: 'Reset Password', bg: 'Нулиране на парола' },
+  resetPasswordSent: { en: 'Password reset email sent! Check your inbox.', bg: 'Имейлът за нулиране на паролата е изпратен! Проверете пощата си.' },
+  sendResetLink: { en: 'Send Reset Link', bg: 'Изпрати линк за нулиране' },
+  backToLogin: { en: 'Back to Login', bg: 'Обратно към вход' },
   
   // Member types
   member: { en: 'Member', bg: 'Член' },
   cardMember: { en: 'Card Member', bg: 'Картов член' },
   staff: { en: 'Staff', bg: 'Персонал' },
   admin: { en: 'Admin', bg: 'Администратор' },
+  inactive: { en: 'Inactive', bg: 'Неактивен' },
   
   // Schedule
   schedule: { en: 'Schedule', bg: 'Разписание' },
@@ -57,6 +64,9 @@ const translations: Translations = {
   maxSpots: { en: 'Max Spots', bg: 'Макс. места' },
   availableSpots: { en: 'Available Spots', bg: 'Свободни места' },
   cardPriority: { en: 'Card Member Priority', bg: 'Приоритет за картови членове' },
+  reservationOpensHours: { en: 'Reservation opens (hours before)', bg: 'Резервации се отварят (часове преди)' },
+  reservationNotOpen: { en: 'Reservations not open yet', bg: 'Резервациите още не са отворени' },
+  cardPriorityPeriod: { en: 'Card member priority period', bg: 'Период за приоритет на картови членове' },
   
   // Reservations
   reserve: { en: 'Reserve Spot', bg: 'Запази място' },
@@ -84,6 +94,13 @@ const translations: Translations = {
   approveStaff: { en: 'Approve Staff', bg: 'Одобри персонал' },
   removeMember: { en: 'Remove Member', bg: 'Премахни член' },
   
+  // Member management
+  promoteToCard: { en: 'Promote to Card Member', bg: 'Повиши до картов член' },
+  demoteToMember: { en: 'Demote to Member', bg: 'Понижи до член' },
+  deactivate: { en: 'Deactivate', bg: 'Деактивирай' },
+  activate: { en: 'Activate', bg: 'Активирай' },
+  removeStaff: { en: 'Remove Staff', bg: 'Премахни персонал' },
+  
   // Notifications
   notifications: { en: 'Notifications', bg: 'Известия' },
   spotFreed: { en: 'A spot has been freed!', bg: 'Освободи се място!' },
@@ -98,6 +115,10 @@ const translations: Translations = {
   staffPending: { en: 'Your staff account is pending approval', bg: 'Вашият акаунт за персонал очаква одобрение' },
   reservationSuccess: { en: 'Reservation confirmed!', bg: 'Резервацията е потвърдена!' },
   reservationCancelled: { en: 'Reservation cancelled', bg: 'Резервацията е отменена' },
+  memberPromoted: { en: 'Member promoted successfully', bg: 'Членът е повишен успешно' },
+  memberDemoted: { en: 'Member demoted successfully', bg: 'Членът е понижен успешно' },
+  memberRemoved: { en: 'Member removed successfully', bg: 'Членът е премахнат успешно' },
+  staffRemoved: { en: 'Staff removed successfully', bg: 'Персоналът е премахнат успешно' },
   
   // Card member signup
   takeCardPhoto: { en: 'Take a photo of your membership card', bg: 'Направете снимка на членската си карта' },
