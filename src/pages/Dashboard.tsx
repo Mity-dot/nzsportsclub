@@ -6,11 +6,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, UserCheck } from 'lucide-react';
-import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth } from 'date-fns';
+import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock } from 'lucide-react';
+import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Workout {
@@ -24,6 +24,7 @@ interface Workout {
   end_time: string;
   max_spots: number;
   card_priority_enabled: boolean;
+  reservation_opens_hours: number;
   created_by: string;
 }
 
@@ -101,6 +102,40 @@ export default function Dashboard() {
     if (data) {
       setReservations(data as Reservation[]);
     }
+  };
+
+  // Check if reservations are open for a workout
+  const getReservationStatus = (workout: Workout) => {
+    const workoutDateTime = new Date(`${workout.workout_date}T${workout.start_time}`);
+    const now = new Date();
+    const hoursUntilWorkout = differenceInHours(workoutDateTime, now);
+    const reservationOpensHours = workout.reservation_opens_hours || 24;
+    const priorityPeriodHours = reservationOpensHours / 2;
+    
+    // Reservations not open yet
+    if (hoursUntilWorkout > reservationOpensHours) {
+      return { status: 'not_open', hoursUntil: hoursUntilWorkout - reservationOpensHours };
+    }
+    
+    // Card member priority period (first half of reservation window)
+    if (workout.card_priority_enabled && hoursUntilWorkout > reservationOpensHours - priorityPeriodHours) {
+      return { status: 'priority', hoursUntil: hoursUntilWorkout - (reservationOpensHours - priorityPeriodHours) };
+    }
+    
+    // Open for all
+    return { status: 'open', hoursUntil: 0 };
+  };
+
+  const canReserve = (workout: Workout) => {
+    // Staff cannot reserve
+    if (isStaff) return false;
+    
+    const { status } = getReservationStatus(workout);
+    
+    if (status === 'not_open') return false;
+    if (status === 'priority' && !isCardMember) return false;
+    
+    return true;
   };
 
   const handleReserve = async (workoutId: string) => {
@@ -362,6 +397,8 @@ export default function Dashboard() {
                   const available = getAvailableSpots(workout);
                   const reserved = isReserved(workout.id);
                   const isFull = available <= 0;
+                  const reservationStatus = getReservationStatus(workout);
+                  const canMakeReservation = canReserve(workout);
                   
                   return (
                     <motion.div
@@ -374,13 +411,20 @@ export default function Dashboard() {
                         <CardContent className="p-4 sm:p-6">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="space-y-2">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <h4 className="font-display text-xl font-semibold">
                                   {getWorkoutTitle(workout)}
                                 </h4>
-                                {workout.card_priority_enabled && (
-                                  <Badge variant="outline" className="text-xs">
-                                    {t('priorityPeriod')}
+                                {workout.card_priority_enabled && reservationStatus.status === 'priority' && (
+                                  <Badge variant="secondary" className="bg-primary/20">
+                                    <Crown className="h-3 w-3 mr-1" />
+                                    {t('cardPriorityPeriod')}
+                                  </Badge>
+                                )}
+                                {reservationStatus.status === 'not_open' && (
+                                  <Badge variant="outline">
+                                    <Lock className="h-3 w-3 mr-1" />
+                                    {t('reservationNotOpen')}
                                   </Badge>
                                 )}
                               </div>
@@ -404,7 +448,9 @@ export default function Dashboard() {
                             </div>
                             
                             <div className="flex-shrink-0">
-                              {reserved ? (
+                              {isStaff ? (
+                                <Badge variant="outline">{t('staff')}</Badge>
+                              ) : reserved ? (
                                 <Button
                                   variant="outline"
                                   onClick={() => handleCancelReservation(workout.id)}
@@ -416,14 +462,18 @@ export default function Dashboard() {
                               ) : (
                                 <Button
                                   onClick={() => handleReserve(workout.id)}
-                                  disabled={isFull || loadingWorkout === workout.id}
+                                  disabled={isFull || loadingWorkout === workout.id || !canMakeReservation}
                                   className="w-full sm:w-auto"
                                 >
                                   {loadingWorkout === workout.id 
                                     ? t('loading') 
                                     : isFull 
                                       ? t('spotsFull') 
-                                      : t('reserve')
+                                      : !canMakeReservation && reservationStatus.status === 'priority'
+                                        ? t('cardPriorityPeriod')
+                                        : !canMakeReservation
+                                          ? t('reservationNotOpen')
+                                          : t('reserve')
                                   }
                                 </Button>
                               )}

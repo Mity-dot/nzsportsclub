@@ -1,1 +1,7 @@
 project_id = "cgqwnuhzcehtkcwiords"
+
+[functions.send-staff-approval-email]
+verify_jwt = false
+
+[functions.approve-staff]
+verify_jwt = false
