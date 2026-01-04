@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -12,13 +12,17 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { User, CreditCard, Users, ArrowLeft, Camera } from 'lucide-react';
+import { User, CreditCard, Users, ArrowLeft, Camera, CheckCircle, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { z } from 'zod';
 
 type SignUpType = 'member' | 'card_member' | 'staff' | null;
 
+const emailSchema = z.string().trim().email({ message: "Invalid email" }).max(255);
+
 export default function Auth() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const { signIn, signUp } = useAuth();
   const { toast } = useToast();
@@ -26,6 +30,7 @@ export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
   const [signUpType, setSignUpType] = useState<SignUpType>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showPasswordUpdate, setShowPasswordUpdate] = useState(false);
   
   // Form states
   const [email, setEmail] = useState('');
@@ -36,6 +41,43 @@ export default function Auth() {
   const [cardImage, setCardImage] = useState<string | null>(null);
   const [rememberMe, setRememberMe] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotEmailValid, setForgotEmailValid] = useState<boolean | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+
+  // Check for password recovery token in URL
+  useEffect(() => {
+    const handleRecovery = async () => {
+      // Check for recovery mode from hash fragment (Supabase redirects with #access_token=...)
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const type = hashParams.get('type');
+      
+      if (type === 'recovery') {
+        setShowPasswordUpdate(true);
+      }
+    };
+    
+    handleRecovery();
+    
+    // Also listen for auth state changes for recovery
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowPasswordUpdate(true);
+      }
+    });
+    
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const validateForgotEmail = (value: string) => {
+    setForgotEmail(value);
+    if (value.length === 0) {
+      setForgotEmailValid(null);
+      return;
+    }
+    const result = emailSchema.safeParse(value);
+    setForgotEmailValid(result.success);
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +126,52 @@ export default function Auth() {
       });
       setShowForgotPassword(false);
       setForgotEmail('');
+    }
+    
+    setIsLoading(false);
+  };
+
+  const handlePasswordUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!passwordRegex.test(newPassword)) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: t('passwordTooWeak'),
+      });
+      return;
+    }
+    
+    if (newPassword !== confirmNewPassword) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: t('passwordsDoNotMatch'),
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } else {
+      toast({
+        title: t('passwordUpdated'),
+      });
+      setShowPasswordUpdate(false);
+      setNewPassword('');
+      setConfirmNewPassword('');
+      // Clear the hash from URL
+      window.history.replaceState(null, '', window.location.pathname);
+      navigate('/');
     }
     
     setIsLoading(false);
@@ -193,6 +281,67 @@ export default function Auth() {
     },
   ];
 
+  // Password Update Form (after clicking reset link)
+  if (showPasswordUpdate) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-secondary/30 px-4 py-8">
+        <div className="absolute top-4 right-4">
+          <LanguageSelector variant="minimal" />
+        </div>
+        
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md"
+        >
+          <div className="flex justify-center mb-6">
+            <Logo size="md" />
+          </div>
+          
+          <Card className="border-border/50 shadow-elegant">
+            <CardHeader className="text-center">
+              <CardTitle className="font-display text-2xl">{t('updatePassword')}</CardTitle>
+              <CardDescription>{t('enterNewPassword')}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handlePasswordUpdate} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword">{t('newPassword')}</Label>
+                  <Input
+                    id="newPassword"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    className="bg-background"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {t('passwordRequirements')}
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmNewPassword">{t('confirmPassword')}</Label>
+                  <Input
+                    id="confirmNewPassword"
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    required
+                    className="bg-background"
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? t('loading') : t('updatePassword')}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    );
+  }
+
   // Forgot Password Form
   if (showForgotPassword) {
     return (
@@ -213,29 +362,54 @@ export default function Auth() {
           <Card className="border-border/50 shadow-elegant">
             <CardHeader className="text-center">
               <CardTitle className="font-display text-2xl">{t('resetPassword')}</CardTitle>
-              <CardDescription>{t('email')}</CardDescription>
+              <CardDescription>{t('enterEmailForReset')}</CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleForgotPassword} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="forgotEmail">{t('email')}</Label>
-                  <Input
-                    id="forgotEmail"
-                    type="email"
-                    value={forgotEmail}
-                    onChange={(e) => setForgotEmail(e.target.value)}
-                    required
-                    className="bg-background"
-                  />
+                  <div className="relative">
+                    <Input
+                      id="forgotEmail"
+                      type="email"
+                      value={forgotEmail}
+                      onChange={(e) => validateForgotEmail(e.target.value)}
+                      required
+                      className={`bg-background pr-10 ${
+                        forgotEmailValid === true ? 'border-green-500' : 
+                        forgotEmailValid === false ? 'border-destructive' : ''
+                      }`}
+                    />
+                    {forgotEmailValid !== null && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        {forgotEmailValid ? (
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : (
+                          <XCircle className="h-4 w-4 text-destructive" />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {forgotEmailValid === false && (
+                    <p className="text-xs text-destructive">{t('invalidEmail')}</p>
+                  )}
                 </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={isLoading || forgotEmailValid !== true}
+                >
                   {isLoading ? t('loading') : t('sendResetLink')}
                 </Button>
                 <Button 
                   type="button" 
                   variant="ghost" 
                   className="w-full"
-                  onClick={() => setShowForgotPassword(false)}
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setForgotEmail('');
+                    setForgotEmailValid(null);
+                  }}
                 >
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   {t('backToLogin')}
