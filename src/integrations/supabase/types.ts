@@ -294,6 +294,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_member_or_card_member: { Args: { _user_id: string }; Returns: boolean }
       is_staff_or_admin: { Args: { _user_id: string }; Returns: boolean }
     }
     Enums: {
