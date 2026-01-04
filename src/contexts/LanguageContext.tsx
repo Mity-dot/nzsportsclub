@@ -122,6 +122,37 @@ const translations: Translations = {
   memberDescription: { en: 'Regular gym member with access to schedule and reservations', bg: 'Обикновен член с достъп до разписание и резервации' },
   cardMemberDescription: { en: 'Premium member with priority booking and early notifications', bg: 'Премиум член с приоритетно записване и ранни известия' },
   staffDescription: { en: 'Gym staff - requires admin approval', bg: 'Персонал на залата - изисква одобрение от админ' },
+
+  // Password requirements
+  passwordRequirements: { 
+    en: 'Password must be at least 8 characters with 1 uppercase, 1 lowercase, and 1 number', 
+    bg: 'Паролата трябва да е поне 8 символа с 1 главна буква, 1 малка буква и 1 цифра' 
+  },
+  passwordTooWeak: { en: 'Password does not meet requirements', bg: 'Паролата не отговаря на изискванията' },
+  passwordsDoNotMatch: { en: 'Passwords do not match', bg: 'Паролите не съвпадат' },
+
+  // Months
+  january: { en: 'January', bg: 'Януари' },
+  february: { en: 'February', bg: 'Февруари' },
+  march: { en: 'March', bg: 'Март' },
+  april: { en: 'April', bg: 'Април' },
+  may: { en: 'May', bg: 'Май' },
+  june: { en: 'June', bg: 'Юни' },
+  july: { en: 'July', bg: 'Юли' },
+  august: { en: 'August', bg: 'Август' },
+  september: { en: 'September', bg: 'Септември' },
+  october: { en: 'October', bg: 'Октомври' },
+  november: { en: 'November', bg: 'Ноември' },
+  december: { en: 'December', bg: 'Декември' },
+
+  // Short days
+  mon: { en: 'Mon', bg: 'Пон' },
+  tue: { en: 'Tue', bg: 'Вто' },
+  wed: { en: 'Wed', bg: 'Сря' },
+  thu: { en: 'Thu', bg: 'Чет' },
+  fri: { en: 'Fri', bg: 'Пет' },
+  sat: { en: 'Sat', bg: 'Съб' },
+  sun: { en: 'Sun', bg: 'Нед' },
 };
 
 interface LanguageContextType {

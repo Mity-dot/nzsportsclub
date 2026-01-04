@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, UserCheck } from 'lucide-react';
-import { format, addDays, startOfWeek, isSameDay, parseISO } from 'date-fns';
+import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Workout {
@@ -169,6 +169,43 @@ export default function Dashboard() {
     return language === 'bg' && workout.description_bg ? workout.description_bg : workout.description;
   };
 
+  // Bulgarian translations for days and months
+  const shortDayKeys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const fullDayKeys = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const monthKeys = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+  const formatDayShort = (date: Date) => {
+    if (language === 'bg') {
+      return t(shortDayKeys[getDay(date)]);
+    }
+    return format(date, 'EEE');
+  };
+
+  const formatFullDate = (date: Date) => {
+    if (language === 'bg') {
+      const dayName = t(fullDayKeys[getDay(date)]);
+      const monthName = t(monthKeys[getMonth(date)]);
+      const dayNum = format(date, 'd');
+      return `${dayName}, ${dayNum} ${monthName}`;
+    }
+    return format(date, 'EEEE, MMMM d');
+  };
+
+  const formatWeekRange = (start: Date, end: Date) => {
+    if (language === 'bg') {
+      const startMonth = t(monthKeys[getMonth(start)]);
+      const endMonth = t(monthKeys[getMonth(end)]);
+      const startDay = format(start, 'd');
+      const endDay = format(end, 'd');
+      const year = format(end, 'yyyy');
+      if (getMonth(start) === getMonth(end)) {
+        return `${startDay} - ${endDay} ${startMonth}, ${year}`;
+      }
+      return `${startDay} ${startMonth} - ${endDay} ${endMonth}, ${year}`;
+    }
+    return `${format(start, 'MMM d')} - ${format(end, 'MMM d, yyyy')}`;
+  };
+
   const isReserved = (workoutId: string) => {
     return reservations.some(r => r.workout_id === workoutId);
   };
@@ -250,7 +287,7 @@ export default function Dashboard() {
           </Button>
           
           <h2 className="font-display text-lg font-medium">
-            {format(weekStart, 'MMM d')} - {format(addDays(weekStart, 6), 'MMM d, yyyy')}
+            {formatWeekRange(weekStart, addDays(weekStart, 6))}
           </h2>
           
           <Button
@@ -282,7 +319,7 @@ export default function Dashboard() {
                 } ${isToday && !isSelected ? 'ring-2 ring-primary/50' : ''}`}
               >
                 <div className="text-xs sm:text-sm font-medium">
-                  {format(day, 'EEE')}
+                  {formatDayShort(day)}
                 </div>
                 <div className="text-lg sm:text-xl font-display font-semibold">
                   {format(day, 'd')}
@@ -301,7 +338,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <h3 className="font-display text-xl font-semibold flex items-center gap-2">
             <Calendar className="h-5 w-5 text-primary" />
-            {format(selectedDate, 'EEEE, MMMM d')}
+            {formatFullDate(selectedDate)}
           </h3>
           
           <AnimatePresence mode="wait">
