@@ -140,16 +140,58 @@ export default function Dashboard() {
 
   const handleReserve = async (workoutId: string) => {
     if (!user) return;
-    
+
     setLoadingWorkout(workoutId);
-    
-    const { error } = await supabase
+
+    // If a reservation exists (even cancelled), re-activate it instead of inserting a new row.
+    const { data: existingReservation, error: existingError } = await supabase
       .from('reservations')
-      .insert({
-        workout_id: workoutId,
-        user_id: user.id,
+      .select('id, is_active')
+      .eq('workout_id', workoutId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existingError) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: existingError.message,
       });
-    
+      setLoadingWorkout(null);
+      return;
+    }
+
+    if (existingReservation?.id) {
+      if (existingReservation.is_active) {
+        toast({ title: t('alreadyReserved') });
+      } else {
+        const { error: reactivateError } = await supabase
+          .from('reservations')
+          .update({ is_active: true, cancelled_at: null, reserved_at: new Date().toISOString() })
+          .eq('id', existingReservation.id);
+
+        if (reactivateError) {
+          toast({
+            variant: 'destructive',
+            title: 'Error',
+            description: reactivateError.message,
+          });
+        } else {
+          toast({ title: t('reservationSuccess') });
+          fetchReservations();
+          fetchWorkouts();
+        }
+      }
+
+      setLoadingWorkout(null);
+      return;
+    }
+
+    const { error } = await supabase.from('reservations').insert({
+      workout_id: workoutId,
+      user_id: user.id,
+    });
+
     if (error) {
       toast({
         variant: 'destructive',
@@ -161,7 +203,7 @@ export default function Dashboard() {
       fetchReservations();
       fetchWorkouts();
     }
-    
+
     setLoadingWorkout(null);
   };
 

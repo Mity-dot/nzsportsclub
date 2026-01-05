@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Calendar, Clock, Users, 
@@ -42,6 +43,8 @@ interface Profile {
   id: string;
   user_id: string;
   full_name: string | null;
+  email?: string;
+  phone?: string | null;
   member_type: string;
   card_image_url: string | null;
 }
@@ -80,6 +83,7 @@ export default function StaffDashboard() {
   
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [members, setMembers] = useState<MemberWithRole[]>([]);
+  const [selectedMember, setSelectedMember] = useState<MemberWithRole | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [workoutReservations, setWorkoutReservations] = useState<Reservation[]>([]);
@@ -127,10 +131,10 @@ export default function StaffDashboard() {
   };
 
   const fetchMembers = async () => {
-    // Fetch profiles with limited data
+    // Fetch profiles
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, user_id, full_name, member_type, card_image_url')
+      .select('id, user_id, full_name, email, phone, member_type, card_image_url')
       .order('full_name');
     
     if (profiles) {
@@ -379,14 +383,19 @@ export default function StaffDashboard() {
   };
 
   const getMemberStatus = (member: MemberWithRole) => {
-    const isStaffMember = member.roles.some(r => r.role === 'staff' && r.is_approved);
-    const isCardMember = member.member_type === 'card' || member.roles.some(r => r.role === 'card_member');
-    const isActive = member.roles.some(r => r.is_approved);
-    
+    // Staff/admin roles must be approved to be treated as staff.
+    const isStaffMember = member.roles.some(
+      (r) => (r.role === 'staff' || r.role === 'admin') && r.is_approved
+    );
+
+    // Card/member status is driven primarily by the profile (source of truth for membership type).
+    const isCard = member.member_type === 'card';
+
     if (isStaffMember) return 'staff';
-    if (isCardMember) return 'card';
-    if (isActive) return 'member';
-    return 'inactive';
+    if (isCard) return 'card';
+
+    // Anyone with a profile row is considered an active member.
+    return 'member';
   };
 
   const resetWorkoutForm = () => {
@@ -645,12 +654,17 @@ export default function StaffDashboard() {
                 return (
                   <Card key={member.id} className="border-border/50">
                     <CardContent className="p-4 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMember(member)}
+                        className="flex items-center gap-3 text-left"
+                      >
                         {member.card_image_url && (
-                          <img 
-                            src={member.card_image_url} 
-                            alt="Card" 
+                          <img
+                            src={member.card_image_url}
+                            alt={`Membership card photo for ${member.full_name || 'member'}`}
                             className="h-10 w-10 rounded object-cover"
+                            loading="lazy"
                           />
                         )}
                         <div>
@@ -665,12 +679,9 @@ export default function StaffDashboard() {
                             {status === 'staff' && (
                               <Badge variant="outline">{t('staff')}</Badge>
                             )}
-                            {status === 'inactive' && (
-                              <Badge variant="secondary">{t('inactive')}</Badge>
-                            )}
                           </div>
                         </div>
-                      </div>
+                      </button>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">
@@ -756,41 +767,111 @@ export default function StaffDashboard() {
                 {t('markAttendance')} - {selectedWorkout?.title}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-3 py-4">
-              {workoutReservations.length === 0 ? (
-                <p className="text-center text-muted-foreground py-4">No reservations</p>
-              ) : (
-                workoutReservations.map((res) => (
-                  <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
-                    <div>
-                      <p className="font-medium">{res.profiles?.full_name || 'Member'}</p>
-                      {res.profiles?.member_type === 'card' && (
-                        <Badge className="bg-primary/20 text-xs">
-                          <Crown className="h-3 w-3 mr-1" />
-                          Card
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        variant={workoutAttendance[res.user_id] === true ? 'default' : 'outline'}
-                        size="sm"
-                        onClick={() => handleMarkAttendance(selectedWorkout!.id, res.user_id, true)}
-                      >
-                        <CheckCircle className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant={workoutAttendance[res.user_id] === false ? 'destructive' : 'outline'}
-                        size="sm"
-                        onClick={() => handleMarkAttendance(selectedWorkout!.id, res.user_id, false)}
-                      >
-                        <XCircle className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))
+            <div className="py-2 text-sm text-muted-foreground flex items-center justify-between">
+              <span>
+                {t('reservationsMade')}: <span className="font-medium text-foreground">{workoutReservations.length}</span>
+              </span>
+              {selectedWorkout && (
+                <span>
+                  {t('maxSpots')}: <span className="font-medium text-foreground">{selectedWorkout.max_spots}</span>
+                </span>
               )}
             </div>
+
+            {workoutReservations.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">No reservations</p>
+            ) : (
+              <ScrollArea className="max-h-[60vh] pr-3">
+                <div className="space-y-3 py-2">
+                  {workoutReservations.map((res) => (
+                    <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
+                      <div>
+                        <p className="font-medium">{res.profiles?.full_name || 'Member'}</p>
+                        {res.profiles?.member_type === 'card' && (
+                          <Badge className="bg-primary/20 text-xs">
+                            <Crown className="h-3 w-3 mr-1" />
+                            Card
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant={workoutAttendance[res.user_id] === true ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => handleMarkAttendance(selectedWorkout!.id, res.user_id, true)}
+                        >
+                          <CheckCircle className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant={workoutAttendance[res.user_id] === false ? 'destructive' : 'outline'}
+                          size="sm"
+                          onClick={() => handleMarkAttendance(selectedWorkout!.id, res.user_id, false)}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Member Details Dialog */}
+        <Dialog
+          open={!!selectedMember}
+          onOpenChange={(open) => {
+            if (!open) setSelectedMember(null);
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="font-display">{t('memberDetails')}</DialogTitle>
+            </DialogHeader>
+
+            {selectedMember && (
+              <div className="space-y-4 py-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-lg font-medium text-foreground">{selectedMember.full_name || 'Member'}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      {selectedMember.member_type === 'card' && (
+                        <Badge className="bg-primary/20">
+                          <Crown className="h-3 w-3 mr-1" />
+                          {t('cardMember')}
+                        </Badge>
+                      )}
+                      {selectedMember.roles.some(
+                        (r) => (r.role === 'staff' || r.role === 'admin') && r.is_approved
+                      ) && <Badge variant="outline">{t('staff')}</Badge>}
+                    </div>
+                  </div>
+
+                  {selectedMember.member_type === 'card' && selectedMember.card_image_url && (
+                    <img
+                      src={selectedMember.card_image_url}
+                      alt={`Card membership photo for ${selectedMember.full_name || 'member'}`}
+                      className="h-20 w-20 rounded-md object-cover"
+                      loading="lazy"
+                    />
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-border/60 bg-card p-4">
+                  <dl className="grid grid-cols-1 gap-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-muted-foreground">{t('email')}</dt>
+                      <dd className="text-sm text-foreground truncate">{selectedMember.email || '-'}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <dt className="text-sm text-muted-foreground">{t('phone')}</dt>
+                      <dd className="text-sm text-foreground truncate">{selectedMember.phone || '-'}</dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </main>
