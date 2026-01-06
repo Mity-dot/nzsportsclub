@@ -19,7 +19,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Calendar, Clock, Users, 
-  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus
+  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -201,12 +201,14 @@ export default function StaffDashboard() {
   const handleCreateWorkout = async () => {
     if (!user) return;
     
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from('workouts')
       .insert({
         ...workoutForm,
         created_by: user.id,
-      });
+      })
+      .select()
+      .single();
     
     if (error) {
       toast({ variant: 'destructive', title: 'Error', description: error.message });
@@ -215,6 +217,24 @@ export default function StaffDashboard() {
       setShowWorkoutDialog(false);
       resetWorkoutForm();
       fetchWorkouts();
+      
+      // Send push notification for new workout
+      if (data) {
+        try {
+          await supabase.functions.invoke('send-push-notification', {
+            body: {
+              type: 'new_workout',
+              workoutId: data.id,
+              workoutTitle: data.title,
+              workoutTitleBg: data.title_bg,
+              workoutDate: data.workout_date,
+              workoutTime: data.start_time?.slice(0, 5),
+            },
+          });
+        } catch (e) {
+          console.log('Push notification failed, but workout created');
+        }
+      }
     }
   };
 
@@ -327,13 +347,25 @@ export default function StaffDashboard() {
       return;
     }
     
-    // Update role to card_member
+    // Check if user already has a role entry
     const memberRole = member.roles.find(r => r.role === 'member');
+    const cardRole = member.roles.find(r => r.role === 'card_member');
+    
     if (memberRole) {
+      // Update existing member role to card_member
       await supabase
         .from('user_roles')
         .update({ role: 'card_member' })
         .eq('id', memberRole.id);
+    } else if (!cardRole) {
+      // Create new card_member role if none exists
+      await supabase
+        .from('user_roles')
+        .insert({ 
+          user_id: member.user_id, 
+          role: 'card_member',
+          is_approved: true 
+        });
     }
     
     toast({ title: t('memberPromoted') });
@@ -352,9 +384,11 @@ export default function StaffDashboard() {
       return;
     }
     
-    // Update role to member
+    // Check if user has card_member role
     const cardRole = member.roles.find(r => r.role === 'card_member');
+    
     if (cardRole) {
+      // Update card_member role to member
       await supabase
         .from('user_roles')
         .update({ role: 'member' })
@@ -362,6 +396,46 @@ export default function StaffDashboard() {
     }
     
     toast({ title: t('memberDemoted') });
+    fetchMembers();
+  };
+
+  const handleDeactivateMember = async (member: MemberWithRole) => {
+    // Remove all roles except staff/admin to make member inactive
+    const memberRoles = member.roles.filter(r => r.role === 'member' || r.role === 'card_member');
+    
+    for (const role of memberRoles) {
+      await supabase
+        .from('user_roles')
+        .delete()
+        .eq('id', role.id);
+    }
+    
+    // Update profile to regular (inactive state is determined by no member/card_member roles)
+    await supabase
+      .from('profiles')
+      .update({ member_type: 'regular' })
+      .eq('user_id', member.user_id);
+    
+    toast({ title: t('deactivate') + ' - Success' });
+    fetchMembers();
+  };
+
+  const handleActivateMember = async (member: MemberWithRole) => {
+    // Check if user already has a member role
+    const hasRole = member.roles.some(r => r.role === 'member' || r.role === 'card_member');
+    
+    if (!hasRole) {
+      // Create new member role
+      await supabase
+        .from('user_roles')
+        .insert({ 
+          user_id: member.user_id, 
+          role: 'member',
+          is_approved: true 
+        });
+    }
+    
+    toast({ title: t('activate') + ' - Success' });
     fetchMembers();
   };
 
@@ -388,14 +462,18 @@ export default function StaffDashboard() {
       (r) => (r.role === 'staff' || r.role === 'admin') && r.is_approved
     );
 
-    // Card/member status is driven primarily by the profile (source of truth for membership type).
+    // Check for active member/card_member roles
+    const hasMemberRole = member.roles.some(r => r.role === 'member' || r.role === 'card_member');
+    
+    // Card status is driven primarily by the profile (source of truth for membership type).
     const isCard = member.member_type === 'card';
 
     if (isStaffMember) return 'staff';
-    if (isCard) return 'card';
-
-    // Anyone with a profile row is considered an active member.
-    return 'member';
+    if (isCard && hasMemberRole) return 'card';
+    if (hasMemberRole) return 'member';
+    
+    // No active member role means inactive
+    return 'inactive';
   };
 
   const resetWorkoutForm = () => {
@@ -679,6 +757,14 @@ export default function StaffDashboard() {
                             {status === 'staff' && (
                               <Badge variant="outline">{t('staff')}</Badge>
                             )}
+                            {status === 'member' && (
+                              <Badge variant="secondary">{t('member')}</Badge>
+                            )}
+                            {status === 'inactive' && (
+                              <Badge variant="outline" className="text-muted-foreground border-muted">
+                                {t('inactive')}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </button>
@@ -689,17 +775,35 @@ export default function StaffDashboard() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          {status === 'member' && (
-                            <DropdownMenuItem onClick={() => handlePromoteToCard(member)}>
-                              <ArrowUp className="h-4 w-4 mr-2" />
-                              {t('promoteToCard')}
+                          {status === 'inactive' && (
+                            <DropdownMenuItem onClick={() => handleActivateMember(member)}>
+                              <UserPlus className="h-4 w-4 mr-2" />
+                              {t('activate')}
                             </DropdownMenuItem>
                           )}
+                          {status === 'member' && (
+                            <>
+                              <DropdownMenuItem onClick={() => handlePromoteToCard(member)}>
+                                <ArrowUp className="h-4 w-4 mr-2" />
+                                {t('promoteToCard')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDeactivateMember(member)}>
+                                <UserX className="h-4 w-4 mr-2" />
+                                {t('deactivate')}
+                              </DropdownMenuItem>
+                            </>
+                          )}
                           {status === 'card' && (
-                            <DropdownMenuItem onClick={() => handleDemoteToMember(member)}>
-                              <ArrowDown className="h-4 w-4 mr-2" />
-                              {t('demoteToMember')}
-                            </DropdownMenuItem>
+                            <>
+                              <DropdownMenuItem onClick={() => handleDemoteToMember(member)}>
+                                <ArrowDown className="h-4 w-4 mr-2" />
+                                {t('demoteToMember')}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDeactivateMember(member)}>
+                                <UserX className="h-4 w-4 mr-2" />
+                                {t('deactivate')}
+                              </DropdownMenuItem>
+                            </>
                           )}
                           {status === 'staff' && (
                             <DropdownMenuItem onClick={() => handleRemoveStaff(member)}>
