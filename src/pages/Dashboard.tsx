@@ -5,6 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
+import { NotificationSettings } from '@/components/NotificationSettings';
+import { MemberProfileEditor } from '@/components/MemberProfileEditor';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -212,6 +214,9 @@ export default function Dashboard() {
     
     setLoadingWorkout(workoutId);
     
+    // Get workout details for notification
+    const workout = workouts.find(w => w.id === workoutId);
+    
     const { error } = await supabase
       .from('reservations')
       .update({ is_active: false, cancelled_at: new Date().toISOString() })
@@ -228,6 +233,23 @@ export default function Dashboard() {
       toast({ title: t('reservationCancelled') });
       fetchReservations();
       fetchWorkouts();
+      
+      // Send push notification for freed spot
+      if (workout) {
+        try {
+          await supabase.functions.invoke('send-push-notification', {
+            body: {
+              type: 'spot_freed',
+              workoutId: workout.id,
+              workoutTitle: workout.title,
+              workoutTitleBg: workout.title_bg,
+              excludeUserIds: [user.id], // Don't notify the user who cancelled
+            },
+          });
+        } catch (e) {
+          console.log('Push notification failed');
+        }
+      }
     }
     
     setLoadingWorkout(null);
@@ -310,7 +332,9 @@ export default function Dashboard() {
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <Logo size="sm" />
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <NotificationSettings />
+            <MemberProfileEditor />
             <LanguageSelector variant="minimal" />
             
             {(isStaff || isAdmin) && (
