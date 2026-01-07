@@ -135,6 +135,7 @@ export type Database = {
           member_type: Database["public"]["Enums"]["member_type"]
           phone: string | null
           preferred_language: string | null
+          preferred_workout_type: string | null
           updated_at: string
           user_id: string
         }
@@ -149,6 +150,7 @@ export type Database = {
           member_type?: Database["public"]["Enums"]["member_type"]
           phone?: string | null
           preferred_language?: string | null
+          preferred_workout_type?: string | null
           updated_at?: string
           user_id: string
         }
@@ -163,6 +165,7 @@ export type Database = {
           member_type?: Database["public"]["Enums"]["member_type"]
           phone?: string | null
           preferred_language?: string | null
+          preferred_workout_type?: string | null
           updated_at?: string
           user_id?: string
         }
@@ -263,6 +266,36 @@ export type Database = {
         }
         Relationships: []
       }
+      waiting_list: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          notified_at: string | null
+          position: number
+          user_id: string
+          workout_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          notified_at?: string | null
+          position: number
+          user_id: string
+          workout_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          notified_at?: string | null
+          position?: number
+          user_id?: string
+          workout_id?: string
+        }
+        Relationships: []
+      }
       workouts: {
         Row: {
           auto_reserve_enabled: boolean | null
@@ -281,6 +314,7 @@ export type Database = {
           title_bg: string | null
           updated_at: string
           workout_date: string
+          workout_type: string
         }
         Insert: {
           auto_reserve_enabled?: boolean | null
@@ -299,6 +333,7 @@ export type Database = {
           title_bg?: string | null
           updated_at?: string
           workout_date: string
+          workout_type?: string
         }
         Update: {
           auto_reserve_enabled?: boolean | null
@@ -317,6 +352,7 @@ export type Database = {
           title_bg?: string | null
           updated_at?: string
           workout_date?: string
+          workout_type?: string
         }
         Relationships: []
       }
@@ -329,6 +365,10 @@ export type Database = {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["member_type"]
       }
+      get_next_waiting_list_position: {
+        Args: { p_workout_id: string }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -338,6 +378,10 @@ export type Database = {
       }
       is_member_or_card_member: { Args: { _user_id: string }; Returns: boolean }
       is_staff_or_admin: { Args: { _user_id: string }; Returns: boolean }
+      promote_from_waiting_list: {
+        Args: { p_workout_id: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "staff" | "card_member" | "member"
