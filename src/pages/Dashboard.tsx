@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { sendWorkoutNotification } from '@/lib/sendWorkoutNotification';
 import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { NotificationSettings } from '@/components/NotificationSettings';
@@ -310,15 +311,13 @@ export default function Dashboard() {
         if (count && count >= workout.max_spots) {
           // Notify staff that workout is full
           try {
-            await supabase.functions.invoke('send-fcm-notification', {
-              body: {
-                type: 'workout_full',
-                workoutId: workout.id,
-                workoutTitle: workout.title,
-                workoutTitleBg: workout.title_bg,
-                notifyStaff: true,
-                excludeMembers: true,
-              },
+            await sendWorkoutNotification({
+              type: 'workout_full',
+              workoutId: workout.id,
+              workoutTitle: workout.title,
+              workoutTitleBg: workout.title_bg,
+              notifyStaff: true,
+              excludeMembers: true,
             });
           } catch (e) {
             console.log('Push notification failed');
@@ -358,15 +357,13 @@ export default function Dashboard() {
       // Send push notification for freed spot (to members and staff)
       if (workout) {
         try {
-          await supabase.functions.invoke('send-fcm-notification', {
-            body: {
-              type: 'spot_freed',
-              workoutId: workout.id,
-              workoutTitle: workout.title,
-              workoutTitleBg: workout.title_bg,
-              excludeUserIds: [user.id],
-              notifyStaff: true, // Also notify staff
-            },
+          await sendWorkoutNotification({
+            type: 'spot_freed',
+            workoutId: workout.id,
+            workoutTitle: workout.title,
+            workoutTitleBg: workout.title_bg,
+            excludeUserIds: [user.id],
+            notifyStaff: true, // Also notify staff
           });
         } catch (e) {
           console.log('Push notification failed');
