@@ -239,6 +239,17 @@ export function useNotificationSubscription() {
       // Subscribe to push with the VAPID key
       const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
       
+      // Unsubscribe from any existing subscription first (in case VAPID key changed)
+      try {
+        const existingSubscription = await swRegistration.pushManager.getSubscription();
+        if (existingSubscription) {
+          console.log('Unsubscribing from existing push subscription...');
+          await existingSubscription.unsubscribe();
+        }
+      } catch (unsubErr) {
+        console.warn('Could not unsubscribe existing subscription:', unsubErr);
+      }
+      
       let pushSubscription: PushSubscription;
       try {
         pushSubscription = await swRegistration.pushManager.subscribe({
