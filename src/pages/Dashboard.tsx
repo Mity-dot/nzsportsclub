@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock, Loader2 } from 'lucide-react';
-import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours } from 'date-fns';
+import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours, isBefore } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Workout {
@@ -32,12 +32,21 @@ interface Workout {
   auto_reserve_enabled: boolean;
   auto_reserve_executed: boolean;
   created_by: string;
+  workout_type: 'early' | 'late';
 }
 
 interface Reservation {
   id: string;
   workout_id: string;
   user_id: string;
+  is_active: boolean;
+}
+
+interface WaitingListEntry {
+  id: string;
+  workout_id: string;
+  user_id: string;
+  position: number;
   is_active: boolean;
 }
 
@@ -50,9 +59,12 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [waitingList, setWaitingList] = useState<WaitingListEntry[]>([]);
   const [reservationCounts, setReservationCounts] = useState<Record<string, number>>({});
+  const [waitingListCounts, setWaitingListCounts] = useState<Record<string, number>>({});
   const [loadingWorkout, setLoadingWorkout] = useState<string | null>(null);
   const [autoReserveEnabled, setAutoReserveEnabled] = useState(true);
+  const [preferredWorkoutType, setPreferredWorkoutType] = useState<'early' | 'late' | null>(null);
   const [savingAutoReserve, setSavingAutoReserve] = useState(false);
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
@@ -67,6 +79,7 @@ export default function Dashboard() {
   useEffect(() => {
     fetchWorkouts();
     fetchReservations();
+    fetchWaitingList();
   }, [selectedDate]);
 
   // Fetch auto-reserve preference for card members
@@ -76,12 +89,13 @@ export default function Dashboard() {
       
       const { data } = await supabase
         .from('profiles')
-        .select('auto_reserve_enabled')
+        .select('auto_reserve_enabled, preferred_workout_type')
         .eq('user_id', user.id)
         .single();
       
       if (data) {
         setAutoReserveEnabled(data.auto_reserve_enabled ?? true);
+        setPreferredWorkoutType(data.preferred_workout_type as 'early' | 'late' | null);
       }
     };
     
@@ -200,10 +214,59 @@ export default function Dashboard() {
     }
   };
 
+  const fetchWaitingList = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from('waiting_list')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_active', true);
+    
+    if (data) {
+      setWaitingList(data as WaitingListEntry[]);
+    }
+    
+    // Fetch waiting list counts for all workouts in view
+    const startDate = format(weekStart, 'yyyy-MM-dd');
+    const endDate = format(addDays(weekStart, 6), 'yyyy-MM-dd');
+    
+    const { data: workoutsData } = await supabase
+      .from('workouts')
+      .select('id')
+      .gte('workout_date', startDate)
+      .lte('workout_date', endDate);
+    
+    if (workoutsData) {
+      const counts: Record<string, number> = {};
+      for (const workout of workoutsData) {
+        const { count } = await supabase
+          .from('waiting_list')
+          .select('*', { count: 'exact', head: true })
+          .eq('workout_id', workout.id)
+          .eq('is_active', true);
+        counts[workout.id] = count || 0;
+      }
+      setWaitingListCounts(counts);
+    }
+  };
+
+  // Check if workout has passed
+  const isWorkoutPassed = (workout: Workout) => {
+    const workoutEndDateTime = new Date(`${workout.workout_date}T${workout.end_time}`);
+    return isBefore(workoutEndDateTime, new Date());
+  };
+
   // Check if reservations are open for a workout
   const getReservationStatus = (workout: Workout) => {
     const workoutDateTime = new Date(`${workout.workout_date}T${workout.start_time}`);
     const now = new Date();
+    
+    // Check if workout has passed
+    if (isWorkoutPassed(workout)) {
+      return { status: 'passed', hoursUntil: 0 };
+    }
+    
     const hoursUntilWorkout = differenceInHours(workoutDateTime, now);
     const reservationOpensHours = workout.reservation_opens_hours || 24;
     const priorityPeriodHours = reservationOpensHours / 2;
@@ -228,10 +291,115 @@ export default function Dashboard() {
     
     const { status } = getReservationStatus(workout);
     
+    if (status === 'passed') return false;
     if (status === 'not_open') return false;
     if (status === 'priority' && !isCardMember) return false;
     
     return true;
+  };
+
+  // Check if user can join waiting list
+  const canJoinWaitingList = (workout: Workout) => {
+    if (isStaff) return false;
+    if (isWorkoutPassed(workout)) return false;
+    
+    const available = getAvailableSpots(workout);
+    if (available > 0) return false; // Can still reserve, no need for waiting list
+    
+    const alreadyOnList = waitingList.some(w => w.workout_id === workout.id);
+    if (alreadyOnList) return false;
+    
+    const alreadyReserved = reservations.some(r => r.workout_id === workout.id);
+    if (alreadyReserved) return false;
+    
+    return true;
+  };
+
+  const getUserWaitingPosition = (workoutId: string) => {
+    const entry = waitingList.find(w => w.workout_id === workoutId);
+    return entry?.position || null;
+  };
+
+  const handleJoinWaitingList = async (workoutId: string) => {
+    if (!user) return;
+    
+    setLoadingWorkout(workoutId);
+    
+    // Get next position
+    const { data: positionData } = await supabase
+      .rpc('get_next_waiting_list_position', { p_workout_id: workoutId });
+    
+    const position = positionData || 1;
+    
+    const { error } = await supabase
+      .from('waiting_list')
+      .insert({
+        workout_id: workoutId,
+        user_id: user.id,
+        position,
+        is_active: true,
+      });
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } else {
+      toast({ title: t('joinWaitingList') });
+      fetchWaitingList();
+    }
+    
+    setLoadingWorkout(null);
+  };
+
+  const handleLeaveWaitingList = async (workoutId: string) => {
+    if (!user) return;
+    
+    setLoadingWorkout(workoutId);
+    
+    const { error } = await supabase
+      .from('waiting_list')
+      .update({ is_active: false })
+      .eq('workout_id', workoutId)
+      .eq('user_id', user.id);
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } else {
+      toast({ title: t('leaveWaitingList') });
+      fetchWaitingList();
+    }
+    
+    setLoadingWorkout(null);
+  };
+
+  const handleTogglePreferredType = async (type: 'early' | 'late' | null) => {
+    if (!user) return;
+    
+    setSavingAutoReserve(true);
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferred_workout_type: type })
+      .eq('user_id', user.id);
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } else {
+      setPreferredWorkoutType(type);
+    }
+    
+    setSavingAutoReserve(false);
   };
 
   const handleReserve = async (workoutId: string) => {
@@ -498,28 +666,67 @@ export default function Dashboard() {
 
         {/* Auto-reserve toggle for card members */}
         {isCardMember && (
-          <div className="mb-6 p-4 bg-muted/50 rounded-lg flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Crown className="h-5 w-5 text-primary" />
-              <div>
-                <p className="font-medium text-sm">
-                  {language === 'bg' ? 'Автоматична резервация' : 'Auto-reserve'}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {language === 'bg' 
-                    ? 'Автоматично резервиране на места за тренировки' 
-                    : 'Automatically reserve spots for workouts'}
-                </p>
+          <div className="mb-6 p-4 bg-muted/50 rounded-lg space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Crown className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="font-medium text-sm">
+                    {language === 'bg' ? 'Автоматична резервация' : 'Auto-reserve'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {language === 'bg' 
+                      ? 'Автоматично резервиране на места за тренировки' 
+                      : 'Automatically reserve spots for workouts'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {savingAutoReserve && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Switch
+                  checked={autoReserveEnabled}
+                  onCheckedChange={handleToggleAutoReserve}
+                  disabled={savingAutoReserve}
+                />
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {savingAutoReserve && <Loader2 className="h-4 w-4 animate-spin" />}
-              <Switch
-                checked={autoReserveEnabled}
-                onCheckedChange={handleToggleAutoReserve}
-                disabled={savingAutoReserve}
-              />
-            </div>
+            
+            {/* Workout type preference - only shown when auto-reserve is enabled */}
+            {autoReserveEnabled && (
+              <div className="pl-8 border-l-2 border-primary/20 space-y-2">
+                <p className="text-sm font-medium">
+                  {t('autoReserveFor')}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={preferredWorkoutType === 'early' ? 'default' : 'outline'}
+                    onClick={() => handleTogglePreferredType(preferredWorkoutType === 'early' ? null : 'early')}
+                    disabled={savingAutoReserve}
+                  >
+                    {t('early')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={preferredWorkoutType === 'late' ? 'default' : 'outline'}
+                    onClick={() => handleTogglePreferredType(preferredWorkoutType === 'late' ? null : 'late')}
+                    disabled={savingAutoReserve}
+                  >
+                    {t('late')}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {preferredWorkoutType 
+                    ? (language === 'bg' 
+                        ? `Авто-резервация само за ${preferredWorkoutType === 'early' ? 'сутрешни' : 'вечерни'} тренировки` 
+                        : `Auto-reserve only for ${preferredWorkoutType} workouts`)
+                    : (language === 'bg' 
+                        ? 'Авто-резервация за всички типове тренировки' 
+                        : 'Auto-reserve for all workout types')
+                  }
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -611,6 +818,10 @@ export default function Dashboard() {
                   const isFull = available <= 0;
                   const reservationStatus = getReservationStatus(workout);
                   const canMakeReservation = canReserve(workout);
+                  const isPassed = isWorkoutPassed(workout);
+                  const isOnWaitingList = waitingList.some(w => w.workout_id === workout.id);
+                  const waitingPosition = getUserWaitingPosition(workout.id);
+                  const waitingCount = waitingListCounts[workout.id] || 0;
                   
                   return (
                     <motion.div
@@ -619,7 +830,7 @@ export default function Dashboard() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.1 }}
                     >
-                      <Card className={`overflow-hidden border-border/50 shadow-sm hover:shadow-elegant transition-shadow ${workout.card_priority_enabled ? 'ring-1 ring-primary/30' : ''}`}>
+                      <Card className={`overflow-hidden border-border/50 shadow-sm hover:shadow-elegant transition-shadow ${workout.card_priority_enabled ? 'ring-1 ring-primary/30' : ''} ${isPassed ? 'opacity-60' : ''}`}>
                         <CardContent className="p-4 sm:p-6">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="space-y-2">
@@ -630,13 +841,21 @@ export default function Dashboard() {
                                 <h4 className="font-display text-xl font-semibold">
                                   {getWorkoutTitle(workout)}
                                 </h4>
-                                {workout.card_priority_enabled && reservationStatus.status === 'priority' && (
+                                <Badge variant={workout.workout_type === 'early' ? 'default' : 'secondary'} className="text-xs">
+                                  {t(workout.workout_type || 'early')}
+                                </Badge>
+                                {isPassed && (
+                                  <Badge variant="outline" className="text-muted-foreground">
+                                    {t('workoutPassed')}
+                                  </Badge>
+                                )}
+                                {!isPassed && workout.card_priority_enabled && reservationStatus.status === 'priority' && (
                                   <Badge variant="secondary" className="bg-primary/20">
                                     <Crown className="h-3 w-3 mr-1" />
                                     {t('cardPriorityPeriod')}
                                   </Badge>
                                 )}
-                                {reservationStatus.status === 'not_open' && (
+                                {!isPassed && reservationStatus.status === 'not_open' && (
                                   <Badge variant="outline">
                                     <Lock className="h-3 w-3 mr-1" />
                                     {t('reservationNotOpen')}
@@ -659,11 +878,18 @@ export default function Dashboard() {
                                   <Users className="h-4 w-4" />
                                   {available} / {workout.max_spots} {t('availableSpots').toLowerCase()}
                                 </span>
+                                {waitingCount > 0 && (
+                                  <span className="text-xs text-muted-foreground">
+                                    ({waitingCount} {t('waitingList').toLowerCase()})
+                                  </span>
+                                )}
                               </div>
                             </div>
                             
-                            <div className="flex-shrink-0">
-                              {isStaff ? (
+                            <div className="flex-shrink-0 flex flex-col gap-2">
+                              {isPassed ? (
+                                <Badge variant="outline" className="justify-center">{t('workoutPassed')}</Badge>
+                              ) : isStaff ? (
                                 <Badge variant="outline">{t('staff')}</Badge>
                               ) : reserved ? (
                                 <Button
@@ -673,6 +899,29 @@ export default function Dashboard() {
                                   className="w-full sm:w-auto"
                                 >
                                   {loadingWorkout === workout.id ? t('loading') : t('cancelReservation')}
+                                </Button>
+                              ) : isOnWaitingList ? (
+                                <div className="flex flex-col gap-1">
+                                  <Badge variant="secondary" className="justify-center">
+                                    {t('yourPosition')}: #{waitingPosition}
+                                  </Badge>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleLeaveWaitingList(workout.id)}
+                                    disabled={loadingWorkout === workout.id}
+                                  >
+                                    {loadingWorkout === workout.id ? t('loading') : t('leaveWaitingList')}
+                                  </Button>
+                                </div>
+                              ) : isFull && canJoinWaitingList(workout) ? (
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => handleJoinWaitingList(workout.id)}
+                                  disabled={loadingWorkout === workout.id}
+                                  className="w-full sm:w-auto"
+                                >
+                                  {loadingWorkout === workout.id ? t('loading') : t('joinWaitingList')}
                                 </Button>
                               ) : (
                                 <Button

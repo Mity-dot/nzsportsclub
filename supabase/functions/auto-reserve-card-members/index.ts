@@ -67,10 +67,13 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Get all card members who have auto-reserve enabled and don't already have a reservation
+    // Get all card members who have auto-reserve enabled and match workout type preference
+    const workoutType = workout.workout_type || 'early';
+    
+    // First get card members with matching preference or no preference
     const { data: cardMembers } = await supabase
       .from("profiles")
-      .select("user_id")
+      .select("user_id, preferred_workout_type")
       .eq("member_type", "card")
       .eq("auto_reserve_enabled", true);
 
@@ -82,7 +85,12 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    const cardMemberIds = cardMembers.map(m => m.user_id);
+    // Filter to only include members whose preference matches the workout type, or have no preference
+    const eligibleCardMembers = cardMembers.filter(m => 
+      m.preferred_workout_type === null || m.preferred_workout_type === workoutType
+    );
+
+    const cardMemberIds = eligibleCardMembers.map(m => m.user_id);
 
     // Get existing reservations for these card members
     const { data: existingReservations } = await supabase
