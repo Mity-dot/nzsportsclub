@@ -841,14 +841,27 @@ export default function StaffDashboard() {
                         onClick={() => setSelectedMember(member)}
                         className="flex items-center gap-3 text-left"
                       >
-                        {member.card_image_url && (
+                        {status === 'card' ? (
+                          member.card_image_url ? (
+                            <img
+                              src={member.card_image_url}
+                              alt={`Membership card photo for ${member.full_name || 'member'}`}
+                              className="h-12 w-12 rounded-lg object-cover ring-2 ring-primary/30"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center ring-2 ring-primary/30">
+                              <Camera className="h-5 w-5 text-primary/50" />
+                            </div>
+                          )
+                        ) : member.card_image_url ? (
                           <img
                             src={member.card_image_url}
-                            alt={`Membership card photo for ${member.full_name || 'member'}`}
+                            alt={`Photo for ${member.full_name || 'member'}`}
                             className="h-10 w-10 rounded object-cover"
                             loading="lazy"
                           />
-                        )}
+                        ) : null}
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{member.full_name || 'Member'}</span>
