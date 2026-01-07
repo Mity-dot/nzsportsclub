@@ -113,6 +113,20 @@ const translations: Translations = {
   notifications: { en: 'Notifications', bg: 'Известия' },
   spotFreed: { en: 'A spot has been freed!', bg: 'Освободи се място!' },
   
+  // Workout types
+  workoutType: { en: 'Workout Type', bg: 'Тип тренировка' },
+  early: { en: 'Early', bg: 'Сутрешна' },
+  late: { en: 'Late', bg: 'Вечерна' },
+  preferredWorkoutType: { en: 'Preferred Workout Type', bg: 'Предпочитан тип тренировка' },
+  autoReserveFor: { en: 'Auto-reserve for', bg: 'Авто-резервация за' },
+  
+  // Waiting list
+  joinWaitingList: { en: 'Join Waiting List', bg: 'Запиши се в листа за чакане' },
+  leaveWaitingList: { en: 'Leave Waiting List', bg: 'Напусни листа за чакане' },
+  waitingList: { en: 'Waiting List', bg: 'Лист за чакане' },
+  yourPosition: { en: 'Your position', bg: 'Вашата позиция' },
+  workoutPassed: { en: 'Workout has passed', bg: 'Тренировката е приключила' },
+  
   // Language
   language: { en: 'Language', bg: 'Език' },
   english: { en: 'English', bg: 'Английски' },

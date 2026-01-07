@@ -41,6 +41,7 @@ interface Workout {
   auto_reserve_enabled: boolean;
   auto_reserve_executed: boolean;
   created_by: string;
+  workout_type: 'early' | 'late';
 }
 
 interface Profile {
@@ -112,6 +113,7 @@ export default function StaffDashboard() {
     card_priority_enabled: true,
     auto_reserve_enabled: true,
     reservation_opens_hours: 24,
+    workout_type: 'early' as 'early' | 'late',
   });
 
   useEffect(() => {
@@ -740,6 +742,7 @@ export default function StaffDashboard() {
       card_priority_enabled: true,
       auto_reserve_enabled: true,
       reservation_opens_hours: 24,
+      workout_type: 'early',
     });
   };
 
@@ -757,6 +760,7 @@ export default function StaffDashboard() {
       card_priority_enabled: workout.card_priority_enabled,
       auto_reserve_enabled: workout.auto_reserve_enabled ?? true,
       reservation_opens_hours: workout.reservation_opens_hours || 24,
+      workout_type: workout.workout_type || 'early',
     });
     setShowWorkoutDialog(true);
   };
@@ -872,13 +876,38 @@ export default function StaffDashboard() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label>{t('date')}</Label>
-                      <Input
-                        type="date"
-                        value={workoutForm.workout_date}
-                        onChange={(e) => setWorkoutForm(f => ({ ...f, workout_date: e.target.value }))}
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t('date')}</Label>
+                        <Input
+                          type="date"
+                          value={workoutForm.workout_date}
+                          onChange={(e) => setWorkoutForm(f => ({ ...f, workout_date: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t('workoutType')}</Label>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant={workoutForm.workout_type === 'early' ? 'default' : 'outline'}
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => setWorkoutForm(f => ({ ...f, workout_type: 'early' }))}
+                          >
+                            {t('early')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={workoutForm.workout_type === 'late' ? 'default' : 'outline'}
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => setWorkoutForm(f => ({ ...f, workout_type: 'late' }))}
+                          >
+                            {t('late')}
+                          </Button>
+                        </div>
+                      </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -981,6 +1010,9 @@ export default function StaffDashboard() {
                             {workout.max_spots} spots
                           </span>
                         </div>
+                        <Badge variant={workout.workout_type === 'early' ? 'default' : 'secondary'} className="text-xs">
+                          {t(workout.workout_type || 'early')}
+                        </Badge>
                         {workout.card_priority_enabled && (
                           <Badge variant="outline" className="text-xs">
                             <Crown className="h-3 w-3 mr-1" />
