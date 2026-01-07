@@ -109,9 +109,15 @@ export function useWebPushSubscription() {
         return false;
       }
 
-      // Ensure the Firebase messaging service worker is registered.
-      // Note: getRegistration() expects a scope URL, not a script path.
-      const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      // Ensure the Firebase messaging service worker is registered and ready.
+      let swRegistration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+      if (!swRegistration) {
+        swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      }
+      // Wait for the service worker to be active
+      await navigator.serviceWorker.ready;
+
+      console.log('Service worker ready, getting FCM token...');
 
       const fcmToken = await getToken(messaging, {
         vapidKey: VAPID_KEY,
@@ -168,27 +174,36 @@ export function useWebPushSubscription() {
     setIsLoading(true);
 
     try {
-      // Dynamically import Firebase
-      const { getApps, getApp, initializeApp } = await import('firebase/app');
-      const { getMessaging, deleteToken } = await import('firebase/messaging');
-      
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-      const messaging = getMessaging(app);
-      
-      await deleteToken(messaging);
-      console.log('FCM token deleted');
+      // Try to delete the FCM token, but don't fail if it doesn't work
+      try {
+        const { getApps, getApp, initializeApp } = await import('firebase/app');
+        const { getMessaging, deleteToken } = await import('firebase/messaging');
 
-      // Remove from database
-      await supabase
+        const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+        const messaging = getMessaging(app);
+
+        await deleteToken(messaging);
+        console.log('FCM token deleted');
+      } catch (fcmErr) {
+        // FCM token deletion can fail if SW isn't registered, that's OK
+        console.warn('Could not delete FCM token (may already be deleted):', fcmErr);
+      }
+
+      // Always remove from database regardless of FCM deletion result
+      const { error: dbError } = await supabase
         .from('push_subscriptions')
         .delete()
         .eq('user_id', user.id);
+
+      if (dbError) {
+        console.error('Error removing subscription from database:', dbError);
+      }
 
       setIsSubscribed(false);
       setIsLoading(false);
       return true;
     } catch (err) {
-      console.error('Error unsubscribing from FCM:', err);
+      console.error('Error unsubscribing:', err);
       setIsLoading(false);
       return false;
     }
