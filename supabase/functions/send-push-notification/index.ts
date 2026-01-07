@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import webpush from "https://esm.sh/web-push@3.6.7";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -28,156 +29,6 @@ interface NotificationRequest {
   excludeMembers?: boolean;
 }
 
-// Convert base64url to Uint8Array
-function base64UrlToUint8Array(base64url: string): Uint8Array {
-  const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4);
-  const binary = atob(base64 + padding);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-// Uint8Array to base64url
-function uint8ArrayToBase64Url(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-// Create VAPID Authorization header
-async function createVapidAuthHeader(
-  endpoint: string,
-  vapidPublicKey: string,
-  vapidPrivateKey: string
-): Promise<string> {
-  try {
-    const endpointUrl = new URL(endpoint);
-    const audience = endpointUrl.origin;
-
-    // Create JWT header and payload
-    const header = { typ: "JWT", alg: "ES256" };
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      aud: audience,
-      exp: now + 12 * 60 * 60,
-      sub: "mailto:nz@sportclub.com"
-    };
-
-    const headerB64 = uint8ArrayToBase64Url(new TextEncoder().encode(JSON.stringify(header)));
-    const payloadB64 = uint8ArrayToBase64Url(new TextEncoder().encode(JSON.stringify(payload)));
-    const unsignedToken = `${headerB64}.${payloadB64}`;
-
-    // Import private key and sign
-    const privateKeyBytes = base64UrlToUint8Array(vapidPrivateKey);
-
-    // VAPID private keys are 32-byte raw EC private keys
-    // We need to wrap them in proper PKCS8 format
-    const pkcs8Header = new Uint8Array([
-      0x30, 0x81, 0x87, 0x02, 0x01, 0x00, 0x30, 0x13,
-      0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02,
-      0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d,
-      0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02,
-      0x01, 0x01, 0x04, 0x20
-    ]);
-
-    const publicKeyBytes = base64UrlToUint8Array(vapidPublicKey);
-    const pkcs8Footer = new Uint8Array([
-      0xa1, 0x44, 0x03, 0x42, 0x00
-    ]);
-
-    const pkcs8Key = new Uint8Array(pkcs8Header.length + privateKeyBytes.length + pkcs8Footer.length + publicKeyBytes.length);
-    pkcs8Key.set(pkcs8Header, 0);
-    pkcs8Key.set(privateKeyBytes, pkcs8Header.length);
-    pkcs8Key.set(pkcs8Footer, pkcs8Header.length + privateKeyBytes.length);
-    pkcs8Key.set(publicKeyBytes, pkcs8Header.length + privateKeyBytes.length + pkcs8Footer.length);
-
-    const cryptoKey = await crypto.subtle.importKey(
-      "pkcs8",
-      pkcs8Key.buffer as ArrayBuffer,
-      { name: "ECDSA", namedCurve: "P-256" },
-      false,
-      ["sign"]
-    );
-
-    const signature = await crypto.subtle.sign(
-      { name: "ECDSA", hash: "SHA-256" },
-      cryptoKey,
-      new TextEncoder().encode(unsignedToken)
-    );
-
-    // Convert signature from DER format if needed and encode
-    const signatureBytes = new Uint8Array(signature);
-    const signatureB64 = uint8ArrayToBase64Url(signatureBytes);
-    const jwt = `${unsignedToken}.${signatureB64}`;
-
-    return `vapid t=${jwt}, k=${vapidPublicKey}`;
-  } catch (error) {
-    console.error("VAPID auth creation failed:", error);
-    throw error;
-  }
-}
-
-// Send Web Push notification
-async function sendWebPush(
-  subscription: { endpoint: string; p256dh: string; auth: string },
-  payload: PushPayload,
-  vapidPrivateKey: string,
-  vapidPublicKey: string
-): Promise<boolean> {
-  try {
-    const payloadString = JSON.stringify(payload);
-
-    // Try to create VAPID auth header
-    let authHeader: string;
-    try {
-      authHeader = await createVapidAuthHeader(subscription.endpoint, vapidPublicKey, vapidPrivateKey);
-    } catch (authError) {
-      console.log("Using simplified push without VAPID signing");
-      authHeader = "";
-    }
-
-    const headers: HeadersInit = {
-      "Content-Type": "application/json",
-      "TTL": "86400",
-      "Urgency": "high",
-    };
-
-    if (authHeader) {
-      headers["Authorization"] = authHeader;
-    }
-
-    // Note: Full Web Push requires message encryption with the p256dh and auth keys
-    // For now, send unencrypted payload (works with some endpoints)
-    const response = await fetch(subscription.endpoint, {
-      method: "POST",
-      headers,
-      body: payloadString,
-    });
-
-    if (response.ok || response.status === 201) {
-      console.log(`[✓] Push sent successfully`);
-      return true;
-    }
-
-    console.log(`[!] Push response: ${response.status}`);
-
-    // Subscription expired or invalid
-    if (response.status === 410 || response.status === 404) {
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Push error:", error);
-    return true;
-  }
-}
-
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -195,6 +46,13 @@ const handler = async (req: Request): Promise<Response> => {
         { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
+
+    // Configure web-push with VAPID details
+    webpush.setVapidDetails(
+      "mailto:nz@sportclub.com",
+      vapidPublicKey,
+      vapidPrivateKey
+    );
 
     const body: NotificationRequest = await req.json();
     const {
@@ -326,6 +184,15 @@ const handler = async (req: Request): Promise<Response> => {
       filteredSubscriptions = filteredSubscriptions.filter(s => !staffUserIds.has(s.user_id));
     }
 
+    // Filter out invalid endpoints (must start with https://)
+    filteredSubscriptions = filteredSubscriptions.filter(s => {
+      const isValid = s.endpoint && s.endpoint.startsWith('https://');
+      if (!isValid) {
+        console.log(`Skipping invalid endpoint: ${s.endpoint}`);
+      }
+      return isValid;
+    });
+
     console.log(`📤 Sending to ${filteredSubscriptions.length} subscriptions`);
 
     // Send push notifications and track results
@@ -336,17 +203,26 @@ const handler = async (req: Request): Promise<Response> => {
       const userLang = userLanguages.get(sub.user_id) || 'en';
       const payload = getPayload(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, workoutId, userLang);
 
-      const success = await sendWebPush(
-        { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-        payload,
-        vapidPrivateKey,
-        vapidPublicKey
-      );
+      const pushSubscription = {
+        endpoint: sub.endpoint,
+        keys: {
+          p256dh: sub.p256dh,
+          auth: sub.auth
+        }
+      };
 
-      if (success) {
+      try {
+        await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
+        console.log(`[✓] Push sent to ${sub.user_id}`);
         successCount++;
-      } else {
-        expiredSubscriptions.push(sub.id);
+      } catch (error: unknown) {
+        const pushError = error as { statusCode?: number; message?: string };
+        console.error(`[✗] Push failed for ${sub.user_id}:`, pushError.message || error);
+        
+        // 410 Gone or 404 Not Found means subscription is expired
+        if (pushError.statusCode === 410 || pushError.statusCode === 404) {
+          expiredSubscriptions.push(sub.id);
+        }
       }
     }
 
