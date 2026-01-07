@@ -3,19 +3,6 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Firebase configuration for web
-const firebaseConfig = {
-  apiKey: "AIzaSyB77lAHEx-XN7ZPYjwRmikCTYi_BEzS9dk",
-  authDomain: "pushnotsnz.firebaseapp.com",
-  projectId: "pushnotsnz",
-  storageBucket: "pushnotsnz.firebasestorage.app",
-  messagingSenderId: "370180691160",
-  appId: "1:370180691160:web:3297f6c807f7427c0d73ad",
-  measurementId: "G-09XBG6201R"
-};
-
-const VAPID_KEY = 'BHZMzMqXcVLRHlvjLYCE-ld3xGWuC9CIlNuMIJ-YxJQJPxVvqnNLb7TqrwWEDZbKDT8WLFZvHZxJBKB_qBJlVQw';
-
 type SubscriptionResult = { success: boolean; error?: string };
 
 const formatErr = (err: unknown) => {
@@ -25,17 +12,19 @@ const formatErr = (err: unknown) => {
   return `${msg}${code}`;
 };
 
-// Detect if running as an installed PWA (not in browser tab)
-const isInstalledPWA = (): boolean => {
-  // Check for standalone display mode (Android/Desktop PWA)
-  const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-  // Check for iOS standalone mode
-  const isIOSStandalone = (navigator as { standalone?: boolean }).standalone === true;
-  // Check if running in a WebView-like context without full browser chrome
-  const isMinimalUI = window.matchMedia('(display-mode: minimal-ui)').matches;
-  
-  return isStandalone || isIOSStandalone || isMinimalUI;
-};
+// Convert base64 string to Uint8Array for VAPID key
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 export function useNotificationSubscription() {
   const { user } = useAuth();
@@ -44,7 +33,6 @@ export function useNotificationSubscription() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNative, setIsNative] = useState(false);
-  const [isPWA, setIsPWA] = useState(false);
 
   // Initialize and check subscription status
   useEffect(() => {
@@ -53,27 +41,13 @@ export function useNotificationSubscription() {
         const native = Capacitor.isNativePlatform();
         setIsNative(native);
 
-        // Check if running as installed PWA
-        const pwa = !native && isInstalledPWA();
-        setIsPWA(pwa);
-
-        if (pwa) {
-          // Installed PWA - push notifications have limited support
-          // We'll still mark as supported for in-app notifications, but real push won't work
-          console.log('Running as installed PWA - push notifications have limited support');
-          setIsSupported(false); // Mark as not supported since FCM doesn't work in PWA context
-          setIsLoading(false);
-          return;
-        }
-
         if (native) {
           // Native platform - use Capacitor push
           const { PushNotifications } = await import('@capacitor/push-notifications');
           
           const permStatus = await PushNotifications.checkPermissions();
-          setIsSupported(true); // Native always supports push
+          setIsSupported(true);
           
-          // Check if we have a subscription in DB
           if (user) {
             const { data: existingSubscription } = await supabase
               .from('push_subscriptions')
@@ -85,49 +59,29 @@ export function useNotificationSubscription() {
             setIsSubscribed(!!existingSubscription && permStatus.receive === 'granted');
           }
         } else {
-          // Web platform - check FCM support
-          try {
-            const { initializeApp, getApps } = await import('firebase/app');
-            const { isSupported: checkSupported } = await import('firebase/messaging');
-            
-            const supported = await checkSupported();
-            if (!supported) {
-              console.log('FCM not supported in this browser/environment');
-              setIsLoading(false);
-              return;
-            }
-
-            setIsSupported(true);
-
-            // Initialize Firebase if not already
-            if (getApps().length === 0) {
-              initializeApp(firebaseConfig);
-            }
-
-            // Register the FCM service worker
-            if ('serviceWorker' in navigator) {
-              try {
-                await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-                console.log('FCM service worker registered');
-              } catch (swError) {
-                console.error('FCM SW registration failed:', swError);
-              }
-            }
-
-            // Check if user has an existing FCM subscription in database
-            if (user) {
-              const { data: existingSubscription } = await supabase
-                .from('push_subscriptions')
-                .select('id')
-                .eq('user_id', user.id)
-                .like('endpoint', 'fcm://token/%')
-                .maybeSingle();
-              
-              setIsSubscribed(!!existingSubscription);
-            }
-          } catch (webErr) {
-            console.log('Web push not available:', webErr);
+          // Web platform (browser or PWA) - use VAPID Web Push
+          const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+          
+          if (!supported) {
+            console.log('Web Push not supported in this browser');
             setIsSupported(false);
+            setIsLoading(false);
+            return;
+          }
+
+          setIsSupported(true);
+
+          // Check if user has an existing Web Push subscription
+          if (user) {
+            const { data: existingSubscription } = await supabase
+              .from('push_subscriptions')
+              .select('id')
+              .eq('user_id', user.id)
+              .not('endpoint', 'like', 'native://%')
+              .not('endpoint', 'like', 'fcm://%')
+              .maybeSingle();
+            
+            setIsSubscribed(!!existingSubscription);
           }
         }
       } catch (err) {
@@ -150,7 +104,6 @@ export function useNotificationSubscription() {
     try {
       const { PushNotifications } = await import('@capacitor/push-notifications');
 
-      // Request permission
       let permStatus = await PushNotifications.checkPermissions();
       
       if (permStatus.receive === 'prompt') {
@@ -163,7 +116,6 @@ export function useNotificationSubscription() {
         return { success: false, error: msg };
       }
 
-      // Set up listeners before registering
       return new Promise((resolve) => {
         let resolved = false;
         
@@ -174,15 +126,12 @@ export function useNotificationSubscription() {
           }
         };
 
-        // Listen for registration success
         PushNotifications.addListener('registration', async (token) => {
           console.log('Native push registration success, token:', token.value.substring(0, 20) + '...');
           
           try {
-            // Delete old subscriptions for this user
             await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
 
-            // Save the native FCM token to database with native:// prefix
             const nativeEndpoint = `native://fcm/${token.value}`;
             const { error: dbError } = await supabase.from('push_subscriptions').insert({
               user_id: user.id,
@@ -193,14 +142,12 @@ export function useNotificationSubscription() {
 
             if (dbError) {
               const msg = `Failed to save subscription: ${dbError.message}`;
-              console.error(msg, dbError);
               setError(msg);
               setIsLoading(false);
               resolveOnce({ success: false, error: msg });
               return;
             }
 
-            console.log('Native push subscription saved to database');
             setIsSubscribed(true);
             setIsLoading(false);
             resolveOnce({ success: true });
@@ -212,16 +159,13 @@ export function useNotificationSubscription() {
           }
         });
 
-        // Listen for registration errors
         PushNotifications.addListener('registrationError', (err) => {
           const msg = `Push registration failed: ${formatErr(err)}`;
-          console.error(msg, err);
           setError(msg);
           setIsLoading(false);
           resolveOnce({ success: false, error: msg });
         });
 
-        // Register with Apple / Google
         PushNotifications.register().catch((regErr) => {
           const msg = `Failed to register: ${formatErr(regErr)}`;
           setError(msg);
@@ -229,7 +173,6 @@ export function useNotificationSubscription() {
           resolveOnce({ success: false, error: msg });
         });
 
-        // Timeout after 30 seconds
         setTimeout(() => {
           if (!resolved) {
             const msg = 'Registration timed out';
@@ -241,18 +184,16 @@ export function useNotificationSubscription() {
       });
     } catch (err) {
       const msg = `Failed to subscribe: ${formatErr(err)}`;
-      console.error(msg, err);
       setError(msg);
       setIsLoading(false);
       return { success: false, error: msg };
     }
   }, [user]);
 
-  // Web subscribe using Firebase Cloud Messaging
+  // Web subscribe using VAPID-based Web Push (works in browser AND installed PWAs)
   const subscribeWeb = useCallback(async (): Promise<SubscriptionResult> => {
     if (!user || !isSupported) {
       const msg = 'Cannot subscribe: unsupported device or not logged in';
-      console.log(msg, { user: !!user, isSupported });
       setError(msg);
       return { success: false, error: msg };
     }
@@ -272,73 +213,75 @@ export function useNotificationSubscription() {
         return { success: false, error: msg };
       }
 
-      if (!('serviceWorker' in navigator)) {
-        const msg = 'Service worker not supported';
-        setError(msg);
-        setIsLoading(false);
-        return { success: false, error: msg };
-      }
-
-      // Dynamically import Firebase
-      const { initializeApp, getApps, getApp } = await import('firebase/app');
-      const { getMessaging, getToken } = await import('firebase/messaging');
-
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-      const messaging = getMessaging(app);
-
-      // Ensure the Firebase messaging service worker is registered and ready.
+      // Register our service worker
       let swRegistration = await navigator.serviceWorker.getRegistration('/');
       if (!swRegistration) {
-        swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+        swRegistration = await navigator.serviceWorker.register('/sw.js');
+        console.log('Service worker registered');
       }
       await navigator.serviceWorker.ready;
+      console.log('Service worker ready');
 
-      console.log('Service worker ready, scope:', swRegistration.scope);
+      // Get VAPID public key from edge function
+      const { data: vapidData, error: vapidError } = await supabase.functions.invoke('get-vapid-public-key');
+      
+      if (vapidError || !vapidData?.publicKey) {
+        const msg = 'Failed to get push configuration';
+        console.error('VAPID error:', vapidError);
+        setError(msg);
+        setIsLoading(false);
+        return { success: false, error: msg };
+      }
 
-      let fcmToken: string | null = null;
+      const vapidPublicKey = vapidData.publicKey;
+      console.log('Got VAPID public key');
+
+      // Subscribe to push with the VAPID key
+      const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+      
+      let pushSubscription: PushSubscription;
       try {
-        fcmToken = await getToken(messaging, {
-          vapidKey: VAPID_KEY,
-          serviceWorkerRegistration: swRegistration,
+        pushSubscription = await swRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
         });
-      } catch (tokenErr) {
-        const msg = `Failed to get notification token: ${formatErr(tokenErr)}`;
-        console.error(msg, tokenErr);
+        console.log('Push subscription created');
+      } catch (pushErr) {
+        const msg = `Failed to subscribe to push: ${formatErr(pushErr)}`;
+        console.error(msg, pushErr);
         setError(msg);
         setIsLoading(false);
         return { success: false, error: msg };
       }
 
-      if (!fcmToken) {
-        const msg = 'Failed to get notification token (empty token)';
-        setError(msg);
-        setIsLoading(false);
-        return { success: false, error: msg };
-      }
+      // Extract subscription details
+      const subscriptionJson = pushSubscription.toJSON();
+      const endpoint = subscriptionJson.endpoint!;
+      const p256dh = subscriptionJson.keys?.p256dh || '';
+      const auth = subscriptionJson.keys?.auth || '';
 
-      console.log('FCM token obtained:', fcmToken.substring(0, 20) + '...');
+      console.log('Subscription endpoint:', endpoint.substring(0, 50) + '...');
 
       // Delete old subscriptions for this user
       await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
 
-      // Save the FCM token to database with fcm:// prefix for identification
-      const fcmEndpoint = `fcm://token/${fcmToken}`;
+      // Save the Web Push subscription to database
       const { error: dbError } = await supabase.from('push_subscriptions').insert({
         user_id: user.id,
-        endpoint: fcmEndpoint,
-        p256dh: 'fcm',
-        auth: 'fcm',
+        endpoint: endpoint,
+        p256dh: p256dh,
+        auth: auth,
       });
 
       if (dbError) {
         const msg = `Failed to save subscription: ${dbError.message}`;
-        console.error('Error saving FCM token:', dbError);
+        console.error('Error saving subscription:', dbError);
         setError(msg);
         setIsLoading(false);
         return { success: false, error: msg };
       }
 
-      console.log('FCM subscription saved to database');
+      console.log('Web Push subscription saved to database');
       setIsSubscribed(true);
       setIsLoading(false);
       return { success: true };
@@ -371,30 +314,29 @@ export function useNotificationSubscription() {
 
     try {
       if (!isNative) {
-        // Try to delete the FCM token for web
+        // Unsubscribe from Web Push
         try {
-          const { getApps, getApp, initializeApp } = await import('firebase/app');
-          const { getMessaging, deleteToken } = await import('firebase/messaging');
-
-          const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-          const messaging = getMessaging(app);
-
-          await deleteToken(messaging);
-          console.log('FCM token deleted');
-        } catch (fcmErr) {
-          console.warn('Could not delete FCM token (may already be deleted):', fcmErr);
+          const swRegistration = await navigator.serviceWorker.getRegistration('/');
+          if (swRegistration) {
+            const pushSubscription = await swRegistration.pushManager.getSubscription();
+            if (pushSubscription) {
+              await pushSubscription.unsubscribe();
+              console.log('Unsubscribed from Web Push');
+            }
+          }
+        } catch (pushErr) {
+          console.warn('Could not unsubscribe from push:', pushErr);
         }
       }
 
-      // Always remove from database
+      // Remove from database
       const { error: dbError } = await supabase
         .from('push_subscriptions')
         .delete()
         .eq('user_id', user.id);
 
       if (dbError) {
-        const msg = `Failed to remove subscription from database: ${dbError.message}`;
-        console.error(msg, dbError);
+        const msg = `Failed to remove subscription: ${dbError.message}`;
         setError(msg);
         setIsLoading(false);
         return { success: false, error: msg };
@@ -405,7 +347,6 @@ export function useNotificationSubscription() {
       return { success: true };
     } catch (err) {
       const msg = `Failed to disable notifications: ${formatErr(err)}`;
-      console.error(msg, err);
       setError(msg);
       setIsLoading(false);
       return { success: false, error: msg };
@@ -418,7 +359,6 @@ export function useNotificationSubscription() {
     isLoading,
     error,
     isNative,
-    isPWA,
     subscribe,
     unsubscribe,
   };
