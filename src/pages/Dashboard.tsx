@@ -10,8 +10,9 @@ import { MemberProfileEditor } from '@/components/MemberProfileEditor';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock } from 'lucide-react';
+import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock, Loader2 } from 'lucide-react';
 import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -50,6 +51,8 @@ export default function Dashboard() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [reservationCounts, setReservationCounts] = useState<Record<string, number>>({});
   const [loadingWorkout, setLoadingWorkout] = useState<string | null>(null);
+  const [autoReserveEnabled, setAutoReserveEnabled] = useState(true);
+  const [savingAutoReserve, setSavingAutoReserve] = useState(false);
 
   const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
   const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -64,6 +67,53 @@ export default function Dashboard() {
     fetchWorkouts();
     fetchReservations();
   }, [selectedDate]);
+
+  // Fetch auto-reserve preference for card members
+  useEffect(() => {
+    const fetchAutoReservePref = async () => {
+      if (!user || !isCardMember) return;
+      
+      const { data } = await supabase
+        .from('profiles')
+        .select('auto_reserve_enabled')
+        .eq('user_id', user.id)
+        .single();
+      
+      if (data) {
+        setAutoReserveEnabled(data.auto_reserve_enabled ?? true);
+      }
+    };
+    
+    fetchAutoReservePref();
+  }, [user, isCardMember]);
+
+  const handleToggleAutoReserve = async (enabled: boolean) => {
+    if (!user) return;
+    
+    setSavingAutoReserve(true);
+    
+    const { error } = await supabase
+      .from('profiles')
+      .update({ auto_reserve_enabled: enabled })
+      .eq('user_id', user.id);
+    
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.message,
+      });
+    } else {
+      setAutoReserveEnabled(enabled);
+      toast({
+        title: enabled 
+          ? (language === 'bg' ? 'Авто-резервация включена' : 'Auto-reserve enabled')
+          : (language === 'bg' ? 'Авто-резервация изключена' : 'Auto-reserve disabled'),
+      });
+    }
+    
+    setSavingAutoReserve(false);
+  };
 
   const fetchWorkouts = async () => {
     const startDate = format(weekStart, 'yyyy-MM-dd');
@@ -448,6 +498,33 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* Auto-reserve toggle for card members */}
+        {isCardMember && (
+          <div className="mb-6 p-4 bg-muted/50 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Crown className="h-5 w-5 text-primary" />
+              <div>
+                <p className="font-medium text-sm">
+                  {language === 'bg' ? 'Автоматична резервация' : 'Auto-reserve'}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {language === 'bg' 
+                    ? 'Автоматично резервиране на места за тренировки' 
+                    : 'Automatically reserve spots for workouts'}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {savingAutoReserve && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Switch
+                checked={autoReserveEnabled}
+                onCheckedChange={handleToggleAutoReserve}
+                disabled={savingAutoReserve}
+              />
+            </div>
+          </div>
+        )}
 
         {/* Week Navigation */}
         <div className="flex items-center justify-between mb-4">

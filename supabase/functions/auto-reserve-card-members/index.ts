@@ -67,16 +67,17 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Get all card members who don't already have a reservation
+    // Get all card members who have auto-reserve enabled and don't already have a reservation
     const { data: cardMembers } = await supabase
       .from("profiles")
       .select("user_id")
-      .eq("member_type", "card");
+      .eq("member_type", "card")
+      .eq("auto_reserve_enabled", true);
 
     if (!cardMembers || cardMembers.length === 0) {
-      console.log("No card members found");
+      console.log("No card members with auto-reserve enabled found");
       return new Response(
-        JSON.stringify({ message: "No card members found", reserved: 0 }),
+        JSON.stringify({ message: "No card members with auto-reserve enabled", reserved: 0 }),
         { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
