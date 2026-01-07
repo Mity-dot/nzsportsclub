@@ -599,17 +599,25 @@ export default function StaffDashboard() {
   };
 
   const handleAddMemberToWorkout = async (workoutId: string, memberId: string) => {
-    const { error } = await supabase.from('reservations').insert({
-      workout_id: workoutId,
-      user_id: memberId,
-    });
+    // A member might have an existing (inactive) reservation row for this workout.
+    // Because the DB enforces a unique (workout_id, user_id), we must re-activate via upsert.
+    const { error } = await supabase.from('reservations').upsert(
+      {
+        workout_id: workoutId,
+        user_id: memberId,
+        is_active: true,
+        cancelled_at: null,
+        reserved_at: new Date().toISOString(),
+      },
+      { onConflict: 'workout_id,user_id' }
+    );
 
     if (error) {
       toast({ variant: 'destructive', title: 'Error', description: error.message });
     } else {
       toast({ title: language === 'bg' ? 'Членът е добавен' : 'Member added' });
       fetchManageMembersReservations(workoutId);
-      
+
       // Check if workout is now full and notify staff
       const workout = workouts.find(w => w.id === workoutId);
       if (workout) {
@@ -618,7 +626,7 @@ export default function StaffDashboard() {
           .select('*', { count: 'exact', head: true })
           .eq('workout_id', workoutId)
           .eq('is_active', true);
-        
+
         if (count && count >= workout.max_spots) {
           // Notify staff that workout is full
           try {
