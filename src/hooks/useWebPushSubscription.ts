@@ -103,11 +103,19 @@ export function useWebPushSubscription() {
       const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
       const messaging = getMessaging(app);
       
-      const swRegistration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
-      
+      if (!('serviceWorker' in navigator)) {
+        setError('Service worker not supported');
+        setIsLoading(false);
+        return false;
+      }
+
+      // Ensure the Firebase messaging service worker is registered.
+      // Note: getRegistration() expects a scope URL, not a script path.
+      const swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+
       const fcmToken = await getToken(messaging, {
         vapidKey: VAPID_KEY,
-        serviceWorkerRegistration: swRegistration
+        serviceWorkerRegistration: swRegistration,
       });
 
       if (!fcmToken) {

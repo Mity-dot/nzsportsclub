@@ -18,14 +18,14 @@ import { bg, enUS } from 'date-fns/locale';
 export function NotificationSettings() {
   const { t, language } = useLanguage();
   const { toast } = useToast();
-  const { isSubscribed, isLoading: subLoading, subscribe, unsubscribe } = useNotificationSubscription();
+  const { isSubscribed, isLoading: subLoading, error: subError, subscribe, unsubscribe } = useNotificationSubscription();
   const { notifications, unreadCount, isLoading: notifLoading, clearNotifications } = useNotifications();
   const [isToggling, setIsToggling] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
   const handleToggle = async () => {
     if (isToggling || subLoading) return;
-    
+
     setIsToggling(true);
     try {
       if (isSubscribed) {
@@ -35,15 +35,32 @@ export function NotificationSettings() {
             title: t('notifications'),
             description: language === 'bg' ? 'Известията са изключени' : 'Notifications disabled',
           });
+        } else {
+          toast({
+            title: t('notifications'),
+            description:
+              language === 'bg'
+                ? (subError ?? 'Неуспешно изключване на известията')
+                : (subError ?? 'Failed to disable notifications'),
+          });
         }
       } else {
         const success = await subscribe();
         if (success) {
           toast({
             title: t('notifications'),
-            description: language === 'bg' 
-              ? 'Известията са включени! Ще бъдете уведомявани за нови тренировки.' 
-              : 'Notifications enabled! You will be notified about new workouts.',
+            description:
+              language === 'bg'
+                ? 'Известията са включени! Ще бъдете уведомявани за нови тренировки.'
+                : 'Notifications enabled! You will be notified about new workouts.',
+          });
+        } else {
+          toast({
+            title: t('notifications'),
+            description:
+              language === 'bg'
+                ? (subError ?? 'Неуспешно включване на известията. Проверете разрешенията на браузъра.')
+                : (subError ?? 'Failed to enable notifications. Check browser permissions.'),
           });
         }
       }
