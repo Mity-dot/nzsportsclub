@@ -254,10 +254,29 @@ export default function StaffDashboard() {
       setEditingWorkout(null);
       resetWorkoutForm();
       fetchWorkouts();
+      
+      // Send push notification for updated workout
+      try {
+        await supabase.functions.invoke('send-push-notification', {
+          body: {
+            type: 'workout_updated',
+            workoutId: editingWorkout.id,
+            workoutTitle: workoutForm.title,
+            workoutTitleBg: workoutForm.title_bg,
+            workoutDate: workoutForm.workout_date,
+            workoutTime: workoutForm.start_time?.slice(0, 5),
+          },
+        });
+      } catch (e) {
+        console.log('Push notification failed');
+      }
     }
   };
 
   const handleDeleteWorkout = async (workoutId: string) => {
+    // Get workout details before deletion for notification
+    const workoutToDelete = workouts.find(w => w.id === workoutId);
+    
     const { error } = await supabase
       .from('workouts')
       .delete()
@@ -268,6 +287,22 @@ export default function StaffDashboard() {
     } else {
       toast({ title: 'Workout deleted' });
       fetchWorkouts();
+      
+      // Send push notification for deleted workout
+      if (workoutToDelete) {
+        try {
+          await supabase.functions.invoke('send-push-notification', {
+            body: {
+              type: 'workout_deleted',
+              workoutId: workoutId,
+              workoutTitle: workoutToDelete.title,
+              workoutTitleBg: workoutToDelete.title_bg,
+            },
+          });
+        } catch (e) {
+          console.log('Push notification failed');
+        }
+      }
     }
   };
 

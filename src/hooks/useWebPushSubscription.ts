@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Convert VAPID key from base64 to Uint8Array
-function urlBase64ToUint8Array(base64String: string): BufferSource {
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding)
     .replace(/-/g, '+')
@@ -22,47 +22,76 @@ export function useWebPushSubscription() {
   const [isSupported, setIsSupported] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [vapidPublicKey, setVapidPublicKey] = useState<string | null>(null);
 
-  // Check if push notifications are supported
+  // Fetch VAPID public key and check support
   useEffect(() => {
-    const checkSupport = async () => {
-      if ('serviceWorker' in navigator && 'PushManager' in window) {
-        setIsSupported(true);
-        
-        // Check if already subscribed
-        try {
-          const registration = await navigator.serviceWorker.ready;
-          const subscription = await registration.pushManager.getSubscription();
-          setIsSubscribed(!!subscription);
-        } catch (err) {
-          console.error('Error checking subscription:', err);
-        }
+    const init = async () => {
+      // Check browser support
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.log('Push notifications not supported');
+        setIsLoading(false);
+        return;
       }
+
+      setIsSupported(true);
+
+      try {
+        // Fetch VAPID public key from edge function
+        const { data, error: fetchError } = await supabase.functions.invoke('get-vapid-public-key');
+        
+        if (fetchError) {
+          console.error('Error fetching VAPID key:', fetchError);
+          setError('Push notifications not configured');
+          setIsLoading(false);
+          return;
+        }
+
+        if (data?.publicKey) {
+          setVapidPublicKey(data.publicKey);
+          console.log('VAPID public key fetched successfully');
+        } else {
+          setError('Push notifications not configured');
+        }
+
+        // Register service worker
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        console.log('Service worker registered:', registration.scope);
+
+        // Check if already subscribed
+        const subscription = await registration.pushManager.getSubscription();
+        setIsSubscribed(!!subscription);
+        
+        if (subscription) {
+          console.log('Already subscribed to push notifications');
+        }
+      } catch (err) {
+        console.error('Error initializing push:', err);
+        setError('Failed to initialize push notifications');
+      }
+
       setIsLoading(false);
     };
-    
-    checkSupport();
+
+    init();
   }, []);
 
   const subscribe = useCallback(async () => {
-    if (!user || !isSupported) return false;
-    
+    if (!user || !isSupported || !vapidPublicKey) {
+      console.log('Cannot subscribe:', { user: !!user, isSupported, vapidPublicKey: !!vapidPublicKey });
+      return false;
+    }
+
     setIsLoading(true);
     setError(null);
 
     try {
       // Request notification permission
       const permission = await Notification.requestPermission();
+      console.log('Notification permission:', permission);
+      
       if (permission !== 'granted') {
         setError('Notification permission denied');
-        setIsLoading(false);
-        return false;
-      }
-
-      // Get VAPID public key from environment
-      const vapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
-      if (!vapidPublicKey) {
-        setError('Push notifications not configured');
         setIsLoading(false);
         return false;
       }
@@ -76,33 +105,59 @@ export function useWebPushSubscription() {
         applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
       });
 
+      console.log('Push subscription created:', subscription.endpoint);
+
       // Extract subscription details
       const subscriptionJson = subscription.toJSON();
       const endpoint = subscription.endpoint;
       const p256dh = subscriptionJson.keys?.p256dh || '';
       const auth = subscriptionJson.keys?.auth || '';
 
-      // Save subscription to database
-      const { error: dbError } = await supabase
+      // Check for existing subscription for this user
+      const { data: existingSub } = await supabase
         .from('push_subscriptions')
-        .upsert(
-          {
-            user_id: user.id,
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingSub) {
+        // Update existing subscription
+        const { error: dbError } = await supabase
+          .from('push_subscriptions')
+          .update({
             endpoint,
             p256dh,
             auth,
             updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id,endpoint' }
-        );
+          })
+          .eq('user_id', user.id);
 
-      if (dbError) {
-        console.error('Error saving subscription:', dbError);
-        setError('Failed to save subscription');
-        setIsLoading(false);
-        return false;
+        if (dbError) {
+          console.error('Error updating subscription:', dbError);
+          setError('Failed to save subscription');
+          setIsLoading(false);
+          return false;
+        }
+      } else {
+        // Insert new subscription
+        const { error: dbError } = await supabase
+          .from('push_subscriptions')
+          .insert({
+            user_id: user.id,
+            endpoint,
+            p256dh,
+            auth,
+          });
+
+        if (dbError) {
+          console.error('Error saving subscription:', dbError);
+          setError('Failed to save subscription');
+          setIsLoading(false);
+          return false;
+        }
       }
 
+      console.log('Subscription saved to database');
       setIsSubscribed(true);
       setIsLoading(false);
       return true;
@@ -112,26 +167,26 @@ export function useWebPushSubscription() {
       setIsLoading(false);
       return false;
     }
-  }, [user, isSupported]);
+  }, [user, isSupported, vapidPublicKey]);
 
   const unsubscribe = useCallback(async () => {
     if (!user) return false;
-    
+
     setIsLoading(true);
 
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
-      
+
       if (subscription) {
         await subscription.unsubscribe();
-        
+        console.log('Unsubscribed from push notifications');
+
         // Remove from database
         await supabase
           .from('push_subscriptions')
           .delete()
-          .eq('user_id', user.id)
-          .eq('endpoint', subscription.endpoint);
+          .eq('user_id', user.id);
       }
 
       setIsSubscribed(false);
