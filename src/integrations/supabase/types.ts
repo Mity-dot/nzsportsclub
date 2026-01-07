@@ -125,6 +125,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          auto_reserve_enabled: boolean
           card_image_url: string | null
           created_at: string
           email: string
@@ -138,6 +139,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          auto_reserve_enabled?: boolean
           card_image_url?: string | null
           created_at?: string
           email: string
@@ -151,6 +153,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          auto_reserve_enabled?: boolean
           card_image_url?: string | null
           created_at?: string
           email?: string

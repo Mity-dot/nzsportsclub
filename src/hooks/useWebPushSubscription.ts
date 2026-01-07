@@ -113,20 +113,30 @@ export function useWebPushSubscription() {
       const p256dh = subscriptionJson.keys?.p256dh || '';
       const auth = subscriptionJson.keys?.auth || '';
 
-      // Delete any existing subscriptions for this user (handles old endpoints)
-      await supabase
+      // Use upsert to handle existing subscriptions - update if exists, insert if not
+      // First try to delete old subscriptions with different endpoints
+      const { error: deleteError } = await supabase
         .from('push_subscriptions')
         .delete()
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .neq('endpoint', endpoint);
+      
+      if (deleteError) {
+        console.log('Could not delete old subscriptions:', deleteError);
+      }
 
-      // Insert the new subscription
+      // Now upsert the current subscription
       const { error: dbError } = await supabase
         .from('push_subscriptions')
-        .insert({
+        .upsert({
           user_id: user.id,
           endpoint,
           p256dh,
           auth,
+          updated_at: new Date().toISOString(),
+        }, { 
+          onConflict: 'user_id,endpoint',
+          ignoreDuplicates: false 
         });
 
       if (dbError) {
