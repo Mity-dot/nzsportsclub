@@ -36,6 +36,8 @@ interface Workout {
   max_spots: number;
   card_priority_enabled: boolean;
   reservation_opens_hours: number;
+  auto_reserve_enabled: boolean;
+  auto_reserve_executed: boolean;
   created_by: string;
 }
 
@@ -102,6 +104,7 @@ export default function StaffDashboard() {
     end_time: '10:00',
     max_spots: 10,
     card_priority_enabled: true,
+    auto_reserve_enabled: true,
     reservation_opens_hours: 24,
   });
 
@@ -522,6 +525,7 @@ export default function StaffDashboard() {
       end_time: '10:00',
       max_spots: 10,
       card_priority_enabled: true,
+      auto_reserve_enabled: true,
       reservation_opens_hours: 24,
     });
   };
@@ -538,6 +542,7 @@ export default function StaffDashboard() {
       end_time: workout.end_time,
       max_spots: workout.max_spots,
       card_priority_enabled: workout.card_priority_enabled,
+      auto_reserve_enabled: workout.auto_reserve_enabled ?? true,
       reservation_opens_hours: workout.reservation_opens_hours || 24,
     });
     setShowWorkoutDialog(true);
@@ -688,9 +693,29 @@ export default function StaffDashboard() {
                       <Label>{t('cardPriority')}</Label>
                       <Switch
                         checked={workoutForm.card_priority_enabled}
-                        onCheckedChange={(checked) => setWorkoutForm(f => ({ ...f, card_priority_enabled: checked }))}
+                        onCheckedChange={(checked) => setWorkoutForm(f => ({ 
+                          ...f, 
+                          card_priority_enabled: checked,
+                          auto_reserve_enabled: checked ? f.auto_reserve_enabled : false
+                        }))}
                       />
                     </div>
+                    {workoutForm.card_priority_enabled && (
+                      <div className="flex items-center justify-between pl-4 border-l-2 border-primary/20">
+                        <div>
+                          <Label>{language === 'bg' ? 'Авто-резервация' : 'Auto-reserve'}</Label>
+                          <p className="text-xs text-muted-foreground">
+                            {language === 'bg' 
+                              ? 'Автоматично запазва места за картови членове'
+                              : 'Automatically reserve spots for card members'}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={workoutForm.auto_reserve_enabled}
+                          onCheckedChange={(checked) => setWorkoutForm(f => ({ ...f, auto_reserve_enabled: checked }))}
+                        />
+                      </div>
+                    )}
                     <Button 
                       className="w-full" 
                       onClick={editingWorkout ? handleUpdateWorkout : handleCreateWorkout}

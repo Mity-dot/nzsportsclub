@@ -262,6 +262,8 @@ export type Database = {
       }
       workouts: {
         Row: {
+          auto_reserve_enabled: boolean | null
+          auto_reserve_executed: boolean | null
           card_priority_enabled: boolean | null
           created_at: string
           created_by: string
@@ -278,6 +280,8 @@ export type Database = {
           workout_date: string
         }
         Insert: {
+          auto_reserve_enabled?: boolean | null
+          auto_reserve_executed?: boolean | null
           card_priority_enabled?: boolean | null
           created_at?: string
           created_by: string
@@ -294,6 +298,8 @@ export type Database = {
           workout_date: string
         }
         Update: {
+          auto_reserve_enabled?: boolean | null
+          auto_reserve_executed?: boolean | null
           card_priority_enabled?: boolean | null
           created_at?: string
           created_by?: string

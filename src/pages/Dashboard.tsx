@@ -27,6 +27,8 @@ interface Workout {
   max_spots: number;
   card_priority_enabled: boolean;
   reservation_opens_hours: number;
+  auto_reserve_enabled: boolean;
+  auto_reserve_executed: boolean;
   created_by: string;
 }
 
@@ -89,6 +91,47 @@ export default function Dashboard() {
         counts[workout.id] = count || 0;
       }
       setReservationCounts(counts);
+      
+      // Check for auto-reserve triggers (only for staff viewing dashboard)
+      checkAutoReserve(data as Workout[]);
+    }
+  };
+  
+  // Check and trigger auto-reserve for workouts entering priority period
+  const checkAutoReserve = async (workoutList: Workout[]) => {
+    const now = new Date();
+    
+    for (const workout of workoutList) {
+      // Skip if not card priority or auto-reserve disabled or already executed
+      if (!workout.card_priority_enabled || !workout.auto_reserve_enabled || workout.auto_reserve_executed) {
+        continue;
+      }
+      
+      const workoutDateTime = new Date(`${workout.workout_date}T${workout.start_time}`);
+      const hoursUntilWorkout = differenceInHours(workoutDateTime, now);
+      const reservationOpensHours = workout.reservation_opens_hours || 24;
+      
+      // Check if we just entered the reservation window (priority period starts now)
+      if (hoursUntilWorkout <= reservationOpensHours && hoursUntilWorkout > 0) {
+        // Trigger auto-reserve
+        try {
+          console.log('Triggering auto-reserve for workout:', workout.id);
+          const { data, error } = await supabase.functions.invoke('auto-reserve-card-members', {
+            body: { workoutId: workout.id },
+          });
+          
+          if (!error && data) {
+            console.log('Auto-reserve result:', data);
+            // Mark as executed
+            await supabase
+              .from('workouts')
+              .update({ auto_reserve_executed: true })
+              .eq('id', workout.id);
+          }
+        } catch (e) {
+          console.error('Auto-reserve failed:', e);
+        }
+      }
     }
   };
 
@@ -474,11 +517,14 @@ export default function Dashboard() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.1 }}
                     >
-                      <Card className="overflow-hidden border-border/50 shadow-sm hover:shadow-elegant transition-shadow">
+                      <Card className={`overflow-hidden border-border/50 shadow-sm hover:shadow-elegant transition-shadow ${workout.card_priority_enabled ? 'ring-1 ring-primary/30' : ''}`}>
                         <CardContent className="p-4 sm:p-6">
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="space-y-2">
                               <div className="flex items-center gap-2 flex-wrap">
+                                {workout.card_priority_enabled && (
+                                  <Crown className="h-5 w-5 text-primary" />
+                                )}
                                 <h4 className="font-display text-xl font-semibold">
                                   {getWorkoutTitle(workout)}
                                 </h4>
