@@ -58,7 +58,7 @@ async function createVapidAuthHeader(
   try {
     const endpointUrl = new URL(endpoint);
     const audience = endpointUrl.origin;
-    
+
     // Create JWT header and payload
     const header = { typ: "JWT", alg: "ES256" };
     const now = Math.floor(Date.now() / 1000);
@@ -74,7 +74,7 @@ async function createVapidAuthHeader(
 
     // Import private key and sign
     const privateKeyBytes = base64UrlToUint8Array(vapidPrivateKey);
-    
+
     // VAPID private keys are 32-byte raw EC private keys
     // We need to wrap them in proper PKCS8 format
     const pkcs8Header = new Uint8Array([
@@ -84,7 +84,7 @@ async function createVapidAuthHeader(
       0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02,
       0x01, 0x01, 0x04, 0x20
     ]);
-    
+
     const publicKeyBytes = base64UrlToUint8Array(vapidPublicKey);
     const pkcs8Footer = new Uint8Array([
       0xa1, 0x44, 0x03, 0x42, 0x00
@@ -131,7 +131,7 @@ async function sendWebPush(
 ): Promise<boolean> {
   try {
     const payloadString = JSON.stringify(payload);
-    
+
     // Try to create VAPID auth header
     let authHeader: string;
     try {
@@ -197,15 +197,15 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     const body: NotificationRequest = await req.json();
-    const { 
-      type, 
-      workoutId, 
-      workoutTitle, 
-      workoutTitleBg, 
-      workoutDate, 
-      workoutTime, 
-      targetUserIds, 
-      excludeUserIds, 
+    const {
+      type,
+      workoutId,
+      workoutTitle,
+      workoutTitleBg,
+      workoutDate,
+      workoutTime,
+      targetUserIds,
+      excludeUserIds,
       priorityOnly,
       notifyStaff,
       excludeMembers
@@ -253,7 +253,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Get all user roles and profiles for filtering
     const userIds = filteredSubscriptions.map(s => s.user_id);
-    
+
     const { data: profiles } = await supabase
       .from("profiles")
       .select("user_id, member_type, preferred_language")
@@ -280,20 +280,20 @@ const handler = async (req: Request): Promise<Response> => {
 
     // If notifyStaff, also include staff subscriptions
     if (notifyStaff) {
-      const staffUserIds = roles?.filter(r => 
+      const staffUserIds = roles?.filter(r =>
         (r.role === "staff" || r.role === "admin") && r.is_approved
       ).map(r => r.user_id) || [];
-      
+
       const { data: staffSubs } = await supabase
         .from("push_subscriptions")
         .select("*")
         .in("user_id", staffUserIds);
-      
+
       const { data: staffProfiles } = await supabase
         .from("profiles")
         .select("user_id, preferred_language")
         .in("user_id", staffUserIds);
-      
+
       staffProfiles?.forEach(p => {
         userLanguages.set(p.user_id, p.preferred_language || 'en');
       });
@@ -308,7 +308,7 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // If excludeMembers is true, only keep staff subscriptions
+    // excludeMembers => keep only staff/admin
     if (excludeMembers) {
       const staffUserIds = new Set(
         roles?.filter(r => (r.role === "staff" || r.role === "admin") && r.is_approved)
@@ -335,7 +335,7 @@ const handler = async (req: Request): Promise<Response> => {
     for (const sub of filteredSubscriptions) {
       const userLang = userLanguages.get(sub.user_id) || 'en';
       const payload = getPayload(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, workoutId, userLang);
-      
+
       const success = await sendWebPush(
         { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
         payload,
@@ -382,9 +382,9 @@ const handler = async (req: Request): Promise<Response> => {
     console.log(`✅ Sent ${successCount}/${filteredSubscriptions.length} notifications`);
 
     return new Response(
-      JSON.stringify({ 
-        message: "Notifications sent", 
-        sent: successCount, 
+      JSON.stringify({
+        message: "Notifications sent",
+        sent: successCount,
         total: filteredSubscriptions.length,
         expired: expiredSubscriptions.length
       }),
@@ -400,11 +400,11 @@ const handler = async (req: Request): Promise<Response> => {
 };
 
 function getPayload(
-  type: string, 
-  title: string, 
-  titleBg: string | undefined, 
-  date: string | undefined, 
-  time: string | undefined, 
+  type: string,
+  title: string,
+  titleBg: string | undefined,
+  date: string | undefined,
+  time: string | undefined,
   workoutId: string,
   language: string
 ): PushPayload {
@@ -417,7 +417,7 @@ function getPayload(
     case "new_workout":
       return {
         title: isBg ? "🏋️ Нова тренировка!" : "🏋️ New Workout Available!",
-        body: isBg 
+        body: isBg
           ? `"${displayTitle}" е добавена за ${formattedDate} в ${formattedTime}. Резервирайте сега!`
           : `"${displayTitle}" has been scheduled for ${formattedDate} at ${formattedTime}. Reserve your spot now!`,
         icon: "/favicon.ico",
@@ -427,7 +427,7 @@ function getPayload(
     case "workout_updated":
       return {
         title: isBg ? "📝 Тренировка актуализирана" : "📝 Workout Updated",
-        body: isBg 
+        body: isBg
           ? `Детайлите за "${displayTitle}" бяха променени. Проверете новата информация.`
           : `Details for "${displayTitle}" have been changed. Check the updated information.`,
         icon: "/favicon.ico",
@@ -437,7 +437,7 @@ function getPayload(
     case "workout_deleted":
       return {
         title: isBg ? "❌ Тренировка отменена" : "❌ Workout Cancelled",
-        body: isBg 
+        body: isBg
           ? `"${displayTitle}" беше отменена. Резервацията ви е анулирана автоматично.`
           : `"${displayTitle}" has been cancelled. Your reservation has been automatically removed.`,
         icon: "/favicon.ico",
@@ -447,7 +447,7 @@ function getPayload(
     case "spot_freed":
       return {
         title: isBg ? "🎉 Освободено място!" : "🎉 Spot Available!",
-        body: isBg 
+        body: isBg
           ? `Свободно място за "${displayTitle}"! Бързайте да резервирате.`
           : `A spot just opened up for "${displayTitle}"! Hurry and reserve it now.`,
         icon: "/favicon.ico",
@@ -457,7 +457,7 @@ function getPayload(
     case "workout_full":
       return {
         title: isBg ? "📋 Тренировката е пълна" : "📋 Workout Fully Booked",
-        body: isBg 
+        body: isBg
           ? `"${displayTitle}" вече е напълно заета. Всички места са резервирани.`
           : `"${displayTitle}" is now fully booked. All spots have been reserved.`,
         icon: "/favicon.ico",

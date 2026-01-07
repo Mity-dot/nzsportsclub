@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
+import { sendWorkoutNotification } from '@/lib/sendWorkoutNotification';
 import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { Button } from '@/components/ui/button';
@@ -229,15 +230,13 @@ export default function StaffDashboard() {
       // Send push notification for new workout
       if (data) {
         try {
-          await supabase.functions.invoke('send-fcm-notification', {
-            body: {
-              type: 'new_workout',
-              workoutId: data.id,
-              workoutTitle: data.title,
-              workoutTitleBg: data.title_bg,
-              workoutDate: data.workout_date,
-              workoutTime: data.start_time?.slice(0, 5),
-            },
+          await sendWorkoutNotification({
+            type: 'new_workout',
+            workoutId: data.id,
+            workoutTitle: data.title,
+            workoutTitleBg: data.title_bg,
+            workoutDate: data.workout_date,
+            workoutTime: data.start_time?.slice(0, 5),
           });
         } catch (e) {
           console.log('Push notification failed, but workout created');
@@ -265,15 +264,13 @@ export default function StaffDashboard() {
       
       // Send push notification for updated workout
       try {
-        await supabase.functions.invoke('send-fcm-notification', {
-          body: {
-            type: 'workout_updated',
-            workoutId: editingWorkout.id,
-            workoutTitle: workoutForm.title,
-            workoutTitleBg: workoutForm.title_bg,
-            workoutDate: workoutForm.workout_date,
-            workoutTime: workoutForm.start_time?.slice(0, 5),
-          },
+        await sendWorkoutNotification({
+          type: 'workout_updated',
+          workoutId: editingWorkout.id,
+          workoutTitle: workoutForm.title,
+          workoutTitleBg: workoutForm.title_bg,
+          workoutDate: workoutForm.workout_date,
+          workoutTime: workoutForm.start_time?.slice(0, 5),
         });
       } catch (e) {
         console.log('Push notification failed');
@@ -299,13 +296,11 @@ export default function StaffDashboard() {
       // Send push notification for deleted workout
       if (workoutToDelete) {
         try {
-          await supabase.functions.invoke('send-fcm-notification', {
-            body: {
-              type: 'workout_deleted',
-              workoutId: workoutId,
-              workoutTitle: workoutToDelete.title,
-              workoutTitleBg: workoutToDelete.title_bg,
-            },
+          await sendWorkoutNotification({
+            type: 'workout_deleted',
+            workoutId: workoutId,
+            workoutTitle: workoutToDelete.title,
+            workoutTitleBg: workoutToDelete.title_bg,
           });
         } catch (e) {
           console.log('Push notification failed');
@@ -681,15 +676,13 @@ export default function StaffDashboard() {
         if (count && count >= workout.max_spots) {
           // Notify staff that workout is full
           try {
-            await supabase.functions.invoke('send-fcm-notification', {
-              body: {
-                type: 'workout_full',
-                workoutId: workout.id,
-                workoutTitle: workout.title,
-                workoutTitleBg: workout.title_bg,
-                notifyStaff: true,
-                excludeMembers: true,
-              },
+            await sendWorkoutNotification({
+              type: 'workout_full',
+              workoutId: workout.id,
+              workoutTitle: workout.title,
+              workoutTitleBg: workout.title_bg,
+              notifyStaff: true,
+              excludeMembers: true,
             });
           } catch (e) {
             console.log('Push notification failed');
