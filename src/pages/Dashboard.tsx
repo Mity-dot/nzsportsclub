@@ -247,6 +247,34 @@ export default function Dashboard() {
       toast({ title: t('reservationSuccess') });
       fetchReservations();
       fetchWorkouts();
+      
+      // Check if workout is now full and notify staff
+      const workout = workouts.find(w => w.id === workoutId);
+      if (workout) {
+        const { count } = await supabase
+          .from('reservations')
+          .select('*', { count: 'exact', head: true })
+          .eq('workout_id', workoutId)
+          .eq('is_active', true);
+        
+        if (count && count >= workout.max_spots) {
+          // Notify staff that workout is full
+          try {
+            await supabase.functions.invoke('send-push-notification', {
+              body: {
+                type: 'workout_full',
+                workoutId: workout.id,
+                workoutTitle: workout.title,
+                workoutTitleBg: workout.title_bg,
+                notifyStaff: true,
+                excludeMembers: true,
+              },
+            });
+          } catch (e) {
+            console.log('Push notification failed');
+          }
+        }
+      }
     }
 
     setLoadingWorkout(null);

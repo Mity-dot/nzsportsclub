@@ -16,10 +16,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Calendar, Clock, Users, 
-  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2
+  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2, UsersRound
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -91,6 +92,8 @@ export default function StaffDashboard() {
   const [workoutReservations, setWorkoutReservations] = useState<Reservation[]>([]);
   const [workoutAttendance, setWorkoutAttendance] = useState<Record<string, boolean>>({});
   const [uploadingCardImage, setUploadingCardImage] = useState(false);
+  const [manageMembersWorkout, setManageMembersWorkout] = useState<Workout | null>(null);
+  const [manageMembersReservations, setManageMembersReservations] = useState<Reservation[]>([]);
   
   // Workout form
   const [showWorkoutDialog, setShowWorkoutDialog] = useState(false);
@@ -408,7 +411,23 @@ export default function StaffDashboard() {
     }
     
     toast({ title: t('memberPromoted') });
-    fetchMembers();
+    await fetchMembers();
+    
+    // Refetch and update selectedMember with latest data
+    const { data: updatedProfile } = await supabase
+      .from('profiles')
+      .select('id, user_id, full_name, email, phone, member_type, card_image_url')
+      .eq('user_id', member.user_id)
+      .single();
+    
+    const { data: updatedRoles } = await supabase
+      .from('user_roles')
+      .select('*')
+      .eq('user_id', member.user_id);
+    
+    if (updatedProfile && selectedMember?.user_id === member.user_id) {
+      setSelectedMember({ ...updatedProfile, roles: updatedRoles || [] });
+    }
   };
 
   const handleDemoteToMember = async (member: MemberWithRole) => {
@@ -435,7 +454,23 @@ export default function StaffDashboard() {
     }
     
     toast({ title: t('memberDemoted') });
-    fetchMembers();
+    await fetchMembers();
+    
+    // Refetch and update selectedMember with latest data
+    const { data: updatedProfile } = await supabase
+      .from('profiles')
+      .select('id, user_id, full_name, email, phone, member_type, card_image_url')
+      .eq('user_id', member.user_id)
+      .single();
+    
+    const { data: updatedRoles } = await supabase
+      .from('user_roles')
+      .select('*')
+      .eq('user_id', member.user_id);
+    
+    if (updatedProfile && selectedMember?.user_id === member.user_id) {
+      setSelectedMember({ ...updatedProfile, roles: updatedRoles || [] });
+    }
   };
 
   const handleDeactivateMember = async (member: MemberWithRole) => {
@@ -535,6 +570,88 @@ export default function StaffDashboard() {
         toast({ title: t('staffRemoved') });
         fetchMembers();
       }
+    }
+  };
+
+  const fetchManageMembersReservations = async (workoutId: string) => {
+    const { data: reservations } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('workout_id', workoutId)
+      .eq('is_active', true);
+    
+    if (reservations) {
+      const userIds = reservations.map(r => r.user_id);
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, user_id, full_name, member_type, card_image_url')
+        .in('user_id', userIds);
+      
+      const reservationsWithProfiles = reservations.map(r => ({
+        ...r,
+        profiles: profiles?.find(p => p.user_id === r.user_id),
+      }));
+      
+      setManageMembersReservations(reservationsWithProfiles as Reservation[]);
+    } else {
+      setManageMembersReservations([]);
+    }
+  };
+
+  const handleAddMemberToWorkout = async (workoutId: string, memberId: string) => {
+    const { error } = await supabase.from('reservations').insert({
+      workout_id: workoutId,
+      user_id: memberId,
+    });
+
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    } else {
+      toast({ title: language === 'bg' ? 'Членът е добавен' : 'Member added' });
+      fetchManageMembersReservations(workoutId);
+      
+      // Check if workout is now full and notify staff
+      const workout = workouts.find(w => w.id === workoutId);
+      if (workout) {
+        const { count } = await supabase
+          .from('reservations')
+          .select('*', { count: 'exact', head: true })
+          .eq('workout_id', workoutId)
+          .eq('is_active', true);
+        
+        if (count && count >= workout.max_spots) {
+          // Notify staff that workout is full
+          try {
+            await supabase.functions.invoke('send-push-notification', {
+              body: {
+                type: 'workout_full',
+                workoutId: workout.id,
+                workoutTitle: workout.title,
+                workoutTitleBg: workout.title_bg,
+                notifyStaff: true,
+                excludeMembers: true,
+              },
+            });
+          } catch (e) {
+            console.log('Push notification failed');
+          }
+        }
+      }
+    }
+  };
+
+  const handleRemoveMemberFromWorkout = async (workoutId: string, memberId: string) => {
+    const { error } = await supabase
+      .from('reservations')
+      .update({ is_active: false, cancelled_at: new Date().toISOString() })
+      .eq('workout_id', workoutId)
+      .eq('user_id', memberId);
+
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    } else {
+      toast({ title: language === 'bg' ? 'Членът е премахнат' : 'Member removed' });
+      fetchManageMembersReservations(workoutId);
     }
   };
 
@@ -802,6 +919,17 @@ export default function StaffDashboard() {
                         )}
                       </div>
                       <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setManageMembersWorkout(workout);
+                            fetchManageMembersReservations(workout.id);
+                          }}
+                        >
+                          <UsersRound className="h-4 w-4 mr-1" />
+                          {language === 'bg' ? 'Членове' : 'Members'}
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -1120,6 +1248,129 @@ export default function StaffDashboard() {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Manage Members Dialog */}
+        <Dialog open={!!manageMembersWorkout} onOpenChange={() => setManageMembersWorkout(null)}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="font-display">
+                {language === 'bg' ? 'Управление на членове' : 'Manage Members'} - {manageMembersWorkout && (language === 'bg' && manageMembersWorkout.title_bg ? manageMembersWorkout.title_bg : manageMembersWorkout?.title)}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-2 text-sm text-muted-foreground">
+              {language === 'bg' ? 'Записани' : 'Enrolled'}: <span className="font-medium text-foreground">{manageMembersReservations.length}</span>
+              {manageMembersWorkout && (
+                <> / {manageMembersWorkout.max_spots} {language === 'bg' ? 'места' : 'spots'}</>
+              )}
+            </div>
+
+            <div className="flex-1 overflow-hidden flex flex-col gap-4">
+              {/* Members in workout */}
+              <div className="flex-1 overflow-hidden">
+                <h4 className="text-sm font-medium mb-2">{language === 'bg' ? 'В тренировката' : 'In Workout'}</h4>
+                <ScrollArea className="h-[200px] pr-3">
+                  {manageMembersReservations.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-4 text-sm">
+                      {language === 'bg' ? 'Няма записани членове' : 'No members enrolled'}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {manageMembersReservations.map((res) => (
+                        <div key={res.id} className="flex items-center justify-between p-2 rounded-lg bg-secondary/50">
+                          <div className="flex items-center gap-2">
+                            {res.profiles?.card_image_url && (
+                              <img
+                                src={res.profiles.card_image_url}
+                                alt=""
+                                className="h-8 w-8 rounded object-cover"
+                              />
+                            )}
+                            <div>
+                              <p className="text-sm font-medium">{res.profiles?.full_name || 'Member'}</p>
+                              {res.profiles?.member_type === 'card' && (
+                                <Badge className="bg-primary/20 text-xs py-0">
+                                  <Crown className="h-2.5 w-2.5 mr-1" />
+                                  Card
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => manageMembersWorkout && handleRemoveMemberFromWorkout(manageMembersWorkout.id, res.user_id)}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </div>
+
+              <Separator />
+
+              {/* Available members to add */}
+              <div className="flex-1 overflow-hidden">
+                <h4 className="text-sm font-medium mb-2">{language === 'bg' ? 'Добави член' : 'Add Member'}</h4>
+                <ScrollArea className="h-[200px] pr-3">
+                  {(() => {
+                    const enrolledUserIds = new Set(manageMembersReservations.map(r => r.user_id));
+                    const availableMembers = members.filter(m => {
+                      const status = getMemberStatus(m);
+                      return (status === 'member' || status === 'card') && !enrolledUserIds.has(m.user_id);
+                    });
+
+                    if (availableMembers.length === 0) {
+                      return (
+                        <p className="text-center text-muted-foreground py-4 text-sm">
+                          {language === 'bg' ? 'Няма налични членове' : 'No available members'}
+                        </p>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2">
+                        {availableMembers.map((member) => (
+                          <div key={member.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                            <div className="flex items-center gap-2">
+                              {member.card_image_url && (
+                                <img
+                                  src={member.card_image_url}
+                                  alt=""
+                                  className="h-8 w-8 rounded object-cover"
+                                />
+                              )}
+                              <div>
+                                <p className="text-sm font-medium">{member.full_name || 'Member'}</p>
+                                {member.member_type === 'card' && (
+                                  <Badge className="bg-primary/20 text-xs py-0">
+                                    <Crown className="h-2.5 w-2.5 mr-1" />
+                                    Card
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => manageMembersWorkout && handleAddMemberToWorkout(manageMembersWorkout.id, member.user_id)}
+                              className="text-primary hover:text-primary"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </ScrollArea>
+              </div>
+            </div>
           </DialogContent>
         </Dialog>
       </main>

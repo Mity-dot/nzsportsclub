@@ -14,7 +14,7 @@ interface PushPayload {
 }
 
 interface NotificationRequest {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string;
@@ -24,6 +24,7 @@ interface NotificationRequest {
   excludeUserIds?: string[];
   priorityOnly?: boolean;
   notifyStaff?: boolean;
+  excludeMembers?: boolean;
 }
 
 async function sendWebPush(
@@ -82,10 +83,11 @@ const handler = async (req: Request): Promise<Response> => {
       targetUserIds, 
       excludeUserIds, 
       priorityOnly,
-      notifyStaff 
+      notifyStaff,
+      excludeMembers
     } = body;
 
-    console.log("Received notification request:", { type, workoutId, workoutTitle, notifyStaff });
+    console.log("Received notification request:", { type, workoutId, workoutTitle, notifyStaff, excludeMembers });
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -168,8 +170,17 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
+    // If excludeMembers is true, only keep staff subscriptions
+    if (excludeMembers) {
+      const staffUserIds = new Set(
+        roles?.filter(r => (r.role === "staff" || r.role === "admin") && r.is_approved)
+          .map(r => r.user_id) || []
+      );
+      filteredSubscriptions = filteredSubscriptions.filter(s => staffUserIds.has(s.user_id));
+    }
+
     // If not notifyStaff and this is a member notification, exclude staff
-    if (!notifyStaff && (type === "new_workout" || type === "workout_updated" || type === "spot_freed")) {
+    if (!notifyStaff && !excludeMembers && (type === "new_workout" || type === "workout_updated" || type === "spot_freed")) {
       const staffUserIds = new Set(
         roles?.filter(r => (r.role === "staff" || r.role === "admin") && r.is_approved)
           .map(r => r.user_id) || []
@@ -208,6 +219,14 @@ const handler = async (req: Request): Promise<Response> => {
         payload = {
           title: "Spot Available! 🎉",
           body: `A spot just opened up for ${workoutTitle}`,
+          icon: "/favicon.ico",
+          data: { workoutId, type },
+        };
+        break;
+      case "workout_full":
+        payload = {
+          title: "Workout Full! 📋",
+          body: `${workoutTitle} is now fully booked`,
           icon: "/favicon.ico",
           data: { workoutId, type },
         };
@@ -288,6 +307,8 @@ function getMessageBg(type: string, title: string, date?: string, time?: string)
       return `${title} беше отменена`;
     case "spot_freed":
       return `Освободи се място за ${title}`;
+    case "workout_full":
+      return `${title} е напълно резервирана`;
     default:
       return title;
   }
