@@ -19,7 +19,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Calendar, Clock, Users, 
-  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX
+  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -90,6 +90,7 @@ export default function StaffDashboard() {
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
   const [workoutReservations, setWorkoutReservations] = useState<Reservation[]>([]);
   const [workoutAttendance, setWorkoutAttendance] = useState<Record<string, boolean>>({});
+  const [uploadingCardImage, setUploadingCardImage] = useState(false);
   
   // Workout form
   const [showWorkoutDialog, setShowWorkoutDialog] = useState(false);
@@ -475,6 +476,49 @@ export default function StaffDashboard() {
     
     toast({ title: t('activate') + ' - Success' });
     fetchMembers();
+  };
+
+  const handleUpdateCardImage = async (member: MemberWithRole, file: File) => {
+    if (!file) return;
+    
+    setUploadingCardImage(true);
+    
+    try {
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${member.user_id}/card-image.${fileExt}`;
+      
+      // Upload the file
+      const { error: uploadError } = await supabase.storage
+        .from('card-images')
+        .upload(filePath, file, { upsert: true });
+      
+      if (uploadError) throw uploadError;
+      
+      // Get signed URL (private bucket)
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('card-images')
+        .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
+      
+      if (signedError) throw signedError;
+      
+      // Update profile
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ card_image_url: signedData.signedUrl })
+        .eq('user_id', member.user_id);
+      
+      if (updateError) throw updateError;
+      
+      // Update local state
+      setSelectedMember(prev => prev ? { ...prev, card_image_url: signedData.signedUrl } : null);
+      fetchMembers();
+      
+      toast({ title: language === 'bg' ? 'Снимката е обновена' : 'Card image updated' });
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    } finally {
+      setUploadingCardImage(false);
+    }
   };
 
   const handleRemoveStaff = async (member: MemberWithRole) => {
@@ -1012,13 +1056,40 @@ export default function StaffDashboard() {
                     </div>
                   </div>
 
-                  {selectedMember.member_type === 'card' && selectedMember.card_image_url && (
-                    <img
-                      src={selectedMember.card_image_url}
-                      alt={`Card membership photo for ${selectedMember.full_name || 'member'}`}
-                      className="h-20 w-20 rounded-md object-cover"
-                      loading="lazy"
-                    />
+                  {selectedMember.member_type === 'card' && (
+                    <div className="relative">
+                      {selectedMember.card_image_url ? (
+                        <img
+                          src={selectedMember.card_image_url}
+                          alt={`Card membership photo for ${selectedMember.full_name || 'member'}`}
+                          className="h-20 w-20 rounded-md object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="h-20 w-20 rounded-md bg-muted flex items-center justify-center">
+                          <Camera className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                      )}
+                      <label className="absolute -bottom-2 -right-2 cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUpdateCardImage(selectedMember, file);
+                          }}
+                          disabled={uploadingCardImage}
+                        />
+                        <div className="rounded-full bg-primary p-1.5 text-primary-foreground hover:bg-primary/90 transition-colors">
+                          {uploadingCardImage ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Edit className="h-3.5 w-3.5" />
+                          )}
+                        </div>
+                      </label>
+                    </div>
                   )}
                 </div>
 
