@@ -1,6 +1,3 @@
-import { useFCMPushSubscription } from './useFCMPushSubscription';
+import { useWebPushSubscription } from './useWebPushSubscription';
 
-// Re-export the FCM hook as the default notification subscription hook
-export function useNotificationSubscription() {
-  return useFCMPushSubscription();
-}
+export const useNotificationSubscription = useWebPushSubscription;
