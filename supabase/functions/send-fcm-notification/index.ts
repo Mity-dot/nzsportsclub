@@ -118,31 +118,59 @@ async function sendFCMNotification(
   projectId: string,
   fcmToken: string,
   notification: { title: string; body: string },
-  data: Record<string, string>
+  data: Record<string, string>,
+  isNative: boolean = false
 ): Promise<boolean> {
   const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
 
-  const message = {
-    message: {
-      token: fcmToken,
-      notification: {
-        title: notification.title,
-        body: notification.body,
-      },
-      data: data,
-      webpush: {
-        notification: {
-          icon: "/favicon.ico",
-          badge: "/favicon.ico",
-          vibrate: [200, 100, 200],
-          requireInteraction: true,
-        },
-        fcm_options: {
-          link: "/dashboard",
-        },
-      },
+  // Build message payload based on platform
+  const messagePayload: Record<string, unknown> = {
+    token: fcmToken,
+    notification: {
+      title: notification.title,
+      body: notification.body,
     },
+    data: data,
   };
+
+  // Add platform-specific config
+  if (isNative) {
+    // Native Android config
+    messagePayload.android = {
+      notification: {
+        icon: "ic_notification",
+        color: "#7C3AED",
+        click_action: "FLUTTER_NOTIFICATION_CLICK",
+        default_vibrate_timings: true,
+        default_light_settings: true,
+      },
+      priority: "high",
+    };
+    // Native iOS config
+    messagePayload.apns = {
+      payload: {
+        aps: {
+          sound: "default",
+          badge: 1,
+        },
+      },
+    };
+  } else {
+    // Web push config
+    messagePayload.webpush = {
+      notification: {
+        icon: "/favicon.ico",
+        badge: "/favicon.ico",
+        vibrate: [200, 100, 200],
+        requireInteraction: true,
+      },
+      fcm_options: {
+        link: "/dashboard",
+      },
+    };
+  }
+
+  const message = { message: messagePayload };
 
   try {
     const response = await fetch(url, {
@@ -279,11 +307,11 @@ const handler = async (req: Request): Promise<Response> => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Build query for FCM subscriptions (tokens stored with fcm:// prefix)
+    // Build query for FCM subscriptions (tokens stored with fcm:// or native:// prefix)
     let subscriptionsQuery = supabase
       .from("push_subscriptions")
       .select("*")
-      .like("endpoint", "fcm://token/%");
+      .or("endpoint.like.fcm://token/%,endpoint.like.native://fcm/%");
 
     if (targetUserIds && targetUserIds.length > 0) {
       subscriptionsQuery = subscriptionsQuery.in("user_id", targetUserIds);
@@ -351,7 +379,7 @@ const handler = async (req: Request): Promise<Response> => {
         .from("push_subscriptions")
         .select("*")
         .in("user_id", staffUserIds)
-        .like("endpoint", "fcm://token/%");
+        .or("endpoint.like.fcm://token/%,endpoint.like.native://fcm/%");
 
       const { data: staffProfiles } = await supabase
         .from("profiles")
@@ -396,8 +424,18 @@ const handler = async (req: Request): Promise<Response> => {
     let successCount = 0;
 
     for (const sub of filteredSubscriptions) {
-      // Extract FCM token from endpoint (format: fcm://token/{token})
-      const fcmToken = sub.endpoint.replace("fcm://token/", "");
+      // Extract FCM token from endpoint
+      // Formats: "fcm://token/{token}" (web) or "native://fcm/{token}" (native)
+      let fcmToken: string;
+      let isNativeToken = false;
+      
+      if (sub.endpoint.startsWith("native://fcm/")) {
+        fcmToken = sub.endpoint.replace("native://fcm/", "");
+        isNativeToken = true;
+      } else {
+        fcmToken = sub.endpoint.replace("fcm://token/", "");
+      }
+      
       const userLang = userLanguages.get(sub.user_id) || 'en';
       
       const content = getNotificationContent(
@@ -409,7 +447,8 @@ const handler = async (req: Request): Promise<Response> => {
         credentials.project_id,
         fcmToken,
         content,
-        { workoutId, type }
+        { workoutId, type },
+        isNativeToken
       );
 
       if (success) {
