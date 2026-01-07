@@ -22,6 +22,15 @@ export function useWebPushSubscription() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  type SubscriptionResult = { success: boolean; error?: string };
+
+  const formatErr = (err: unknown) => {
+    const anyErr = err as { message?: string; code?: string } | null;
+    const msg = anyErr?.message ?? (err instanceof Error ? err.message : String(err));
+    const code = anyErr?.code ? ` (${anyErr.code})` : '';
+    return `${msg}${code}`;
+  };
+
   // Check FCM support and current subscription status
   useEffect(() => {
     const init = async () => {
@@ -76,10 +85,12 @@ export function useWebPushSubscription() {
     init();
   }, [user]);
 
-  const subscribe = useCallback(async () => {
+  const subscribe = useCallback(async (): Promise<SubscriptionResult> => {
     if (!user || !isSupported) {
-      console.log('Cannot subscribe:', { user: !!user, isSupported });
-      return false;
+      const msg = 'Cannot subscribe: unsupported device or not logged in';
+      console.log(msg, { user: !!user, isSupported });
+      setError(msg);
+      return { success: false, error: msg };
     }
 
     setIsLoading(true);
@@ -89,87 +100,95 @@ export function useWebPushSubscription() {
       // Request notification permission
       const permission = await Notification.requestPermission();
       console.log('Notification permission:', permission);
-      
+
       if (permission !== 'granted') {
-        setError('Notification permission denied');
+        const msg = 'Notification permission denied';
+        setError(msg);
         setIsLoading(false);
-        return false;
+        return { success: false, error: msg };
+      }
+
+      if (!('serviceWorker' in navigator)) {
+        const msg = 'Service worker not supported';
+        setError(msg);
+        setIsLoading(false);
+        return { success: false, error: msg };
       }
 
       // Dynamically import Firebase
       const { initializeApp, getApps, getApp } = await import('firebase/app');
       const { getMessaging, getToken } = await import('firebase/messaging');
-      
+
       const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
       const messaging = getMessaging(app);
-      
-      if (!('serviceWorker' in navigator)) {
-        setError('Service worker not supported');
-        setIsLoading(false);
-        return false;
-      }
 
       // Ensure the Firebase messaging service worker is registered and ready.
-      let swRegistration = await navigator.serviceWorker.getRegistration('/firebase-messaging-sw.js');
+      let swRegistration = await navigator.serviceWorker.getRegistration('/');
       if (!swRegistration) {
         swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
       }
-      // Wait for the service worker to be active
       await navigator.serviceWorker.ready;
 
-      console.log('Service worker ready, getting FCM token...');
+      console.log('Service worker ready, scope:', swRegistration.scope);
 
-      const fcmToken = await getToken(messaging, {
-        vapidKey: VAPID_KEY,
-        serviceWorkerRegistration: swRegistration,
-      });
+      let fcmToken: string | null = null;
+      try {
+        fcmToken = await getToken(messaging, {
+          vapidKey: VAPID_KEY,
+          serviceWorkerRegistration: swRegistration,
+        });
+      } catch (tokenErr) {
+        const msg = `Failed to get notification token: ${formatErr(tokenErr)}`;
+        console.error(msg, tokenErr);
+        setError(msg);
+        setIsLoading(false);
+        return { success: false, error: msg };
+      }
 
       if (!fcmToken) {
-        setError('Failed to get notification token');
+        const msg = 'Failed to get notification token (empty token)';
+        setError(msg);
         setIsLoading(false);
-        return false;
+        return { success: false, error: msg };
       }
 
       console.log('FCM token obtained:', fcmToken.substring(0, 20) + '...');
 
       // Delete old subscriptions for this user
-      await supabase
-        .from('push_subscriptions')
-        .delete()
-        .eq('user_id', user.id);
+      await supabase.from('push_subscriptions').delete().eq('user_id', user.id);
 
       // Save the FCM token to database with fcm:// prefix for identification
       const fcmEndpoint = `fcm://token/${fcmToken}`;
-      const { error: dbError } = await supabase
-        .from('push_subscriptions')
-        .insert({
-          user_id: user.id,
-          endpoint: fcmEndpoint,
-          p256dh: 'fcm',
-          auth: 'fcm',
-        });
+      const { error: dbError } = await supabase.from('push_subscriptions').insert({
+        user_id: user.id,
+        endpoint: fcmEndpoint,
+        p256dh: 'fcm',
+        auth: 'fcm',
+      });
 
       if (dbError) {
+        const msg = `Failed to save subscription: ${dbError.message}`;
         console.error('Error saving FCM token:', dbError);
-        setError('Failed to save subscription');
+        setError(msg);
         setIsLoading(false);
-        return false;
+        return { success: false, error: msg };
       }
 
       console.log('FCM subscription saved to database');
       setIsSubscribed(true);
       setIsLoading(false);
-      return true;
+      return { success: true };
     } catch (err) {
-      console.error('Error subscribing to FCM:', err);
-      setError('Failed to subscribe to notifications');
+      const msg = `Failed to subscribe to notifications: ${formatErr(err)}`;
+      console.error(msg, err);
+      setError(msg);
       setIsLoading(false);
-      return false;
+      return { success: false, error: msg };
     }
   }, [user, isSupported]);
 
-  const unsubscribe = useCallback(async () => {
-    if (!user) return false;
+  const unsubscribe = useCallback(async (): Promise<SubscriptionResult> => {
+    if (!user) return { success: false, error: 'Not logged in' };
 
     setIsLoading(true);
 
@@ -185,7 +204,6 @@ export function useWebPushSubscription() {
         await deleteToken(messaging);
         console.log('FCM token deleted');
       } catch (fcmErr) {
-        // FCM token deletion can fail if SW isn't registered, that's OK
         console.warn('Could not delete FCM token (may already be deleted):', fcmErr);
       }
 
@@ -196,16 +214,22 @@ export function useWebPushSubscription() {
         .eq('user_id', user.id);
 
       if (dbError) {
-        console.error('Error removing subscription from database:', dbError);
+        const msg = `Failed to remove subscription from database: ${dbError.message}`;
+        console.error(msg, dbError);
+        setError(msg);
+        setIsLoading(false);
+        return { success: false, error: msg };
       }
 
       setIsSubscribed(false);
       setIsLoading(false);
-      return true;
+      return { success: true };
     } catch (err) {
-      console.error('Error unsubscribing:', err);
+      const msg = `Failed to disable notifications: ${formatErr(err)}`;
+      console.error(msg, err);
+      setError(msg);
       setIsLoading(false);
-      return false;
+      return { success: false, error: msg };
     }
   }, [user]);
 

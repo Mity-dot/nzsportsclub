@@ -29,8 +29,8 @@ export function NotificationSettings() {
     setIsToggling(true);
     try {
       if (isSubscribed) {
-        const success = await unsubscribe();
-        if (success) {
+        const result = await unsubscribe();
+        if (result.success) {
           toast({
             title: t('notifications'),
             description: language === 'bg' ? 'Известията са изключени' : 'Notifications disabled',
@@ -40,13 +40,13 @@ export function NotificationSettings() {
             title: t('notifications'),
             description:
               language === 'bg'
-                ? (subError ?? 'Неуспешно изключване на известията')
-                : (subError ?? 'Failed to disable notifications'),
+                ? (result.error ?? 'Неуспешно изключване на известията')
+                : (result.error ?? 'Failed to disable notifications'),
           });
         }
       } else {
-        const success = await subscribe();
-        if (success) {
+        const result = await subscribe();
+        if (result.success) {
           toast({
             title: t('notifications'),
             description:
@@ -59,8 +59,8 @@ export function NotificationSettings() {
             title: t('notifications'),
             description:
               language === 'bg'
-                ? (subError ?? 'Неуспешно включване на известията. Проверете разрешенията на браузъра.')
-                : (subError ?? 'Failed to enable notifications. Check browser permissions.'),
+                ? (result.error ?? 'Неуспешно включване на известията. Проверете разрешенията на браузъра.')
+                : (result.error ?? 'Failed to enable notifications. Check browser permissions.'),
           });
         }
       }
