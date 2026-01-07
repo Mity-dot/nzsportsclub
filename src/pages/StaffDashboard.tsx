@@ -229,7 +229,7 @@ export default function StaffDashboard() {
       // Send push notification for new workout
       if (data) {
         try {
-          await supabase.functions.invoke('send-push-notification', {
+          await supabase.functions.invoke('send-fcm-notification', {
             body: {
               type: 'new_workout',
               workoutId: data.id,
@@ -265,7 +265,7 @@ export default function StaffDashboard() {
       
       // Send push notification for updated workout
       try {
-        await supabase.functions.invoke('send-push-notification', {
+        await supabase.functions.invoke('send-fcm-notification', {
           body: {
             type: 'workout_updated',
             workoutId: editingWorkout.id,
@@ -299,7 +299,7 @@ export default function StaffDashboard() {
       // Send push notification for deleted workout
       if (workoutToDelete) {
         try {
-          await supabase.functions.invoke('send-push-notification', {
+          await supabase.functions.invoke('send-fcm-notification', {
             body: {
               type: 'workout_deleted',
               workoutId: workoutId,
@@ -681,7 +681,7 @@ export default function StaffDashboard() {
         if (count && count >= workout.max_spots) {
           // Notify staff that workout is full
           try {
-            await supabase.functions.invoke('send-push-notification', {
+            await supabase.functions.invoke('send-fcm-notification', {
               body: {
                 type: 'workout_full',
                 workoutId: workout.id,

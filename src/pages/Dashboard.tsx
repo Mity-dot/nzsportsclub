@@ -310,7 +310,7 @@ export default function Dashboard() {
         if (count && count >= workout.max_spots) {
           // Notify staff that workout is full
           try {
-            await supabase.functions.invoke('send-push-notification', {
+            await supabase.functions.invoke('send-fcm-notification', {
               body: {
                 type: 'workout_full',
                 workoutId: workout.id,
@@ -358,7 +358,7 @@ export default function Dashboard() {
       // Send push notification for freed spot (to members and staff)
       if (workout) {
         try {
-          await supabase.functions.invoke('send-push-notification', {
+          await supabase.functions.invoke('send-fcm-notification', {
             body: {
               type: 'spot_freed',
               workoutId: workout.id,
