@@ -115,8 +115,8 @@ const translations: Translations = {
   
   // Workout types
   workoutType: { en: 'Workout Type', bg: 'Тип тренировка' },
-  early: { en: 'Early', bg: 'Сутрешна' },
-  late: { en: 'Late', bg: 'Вечерна' },
+  early: { en: 'Early', bg: 'Ранна' },
+  late: { en: 'Late', bg: 'Късна' },
   preferredWorkoutType: { en: 'Preferred Workout Type', bg: 'Предпочитан тип тренировка' },
   autoReserveFor: { en: 'Auto-reserve for', bg: 'Авто-резервация за' },
   
