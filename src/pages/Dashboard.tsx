@@ -234,7 +234,7 @@ export default function Dashboard() {
       fetchReservations();
       fetchWorkouts();
       
-      // Send push notification for freed spot
+      // Send push notification for freed spot (to members and staff)
       if (workout) {
         try {
           await supabase.functions.invoke('send-push-notification', {
@@ -243,7 +243,8 @@ export default function Dashboard() {
               workoutId: workout.id,
               workoutTitle: workout.title,
               workoutTitleBg: workout.title_bg,
-              excludeUserIds: [user.id], // Don't notify the user who cancelled
+              excludeUserIds: [user.id],
+              notifyStaff: true, // Also notify staff
             },
           });
         } catch (e) {
