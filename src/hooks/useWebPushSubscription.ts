@@ -113,48 +113,27 @@ export function useWebPushSubscription() {
       const p256dh = subscriptionJson.keys?.p256dh || '';
       const auth = subscriptionJson.keys?.auth || '';
 
-      // Check for existing subscription for this user
-      const { data: existingSub } = await supabase
+      // Delete any existing subscriptions for this user (handles old endpoints)
+      await supabase
         .from('push_subscriptions')
-        .select('id')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .delete()
+        .eq('user_id', user.id);
 
-      if (existingSub) {
-        // Update existing subscription
-        const { error: dbError } = await supabase
-          .from('push_subscriptions')
-          .update({
-            endpoint,
-            p256dh,
-            auth,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('user_id', user.id);
+      // Insert the new subscription
+      const { error: dbError } = await supabase
+        .from('push_subscriptions')
+        .insert({
+          user_id: user.id,
+          endpoint,
+          p256dh,
+          auth,
+        });
 
-        if (dbError) {
-          console.error('Error updating subscription:', dbError);
-          setError('Failed to save subscription');
-          setIsLoading(false);
-          return false;
-        }
-      } else {
-        // Insert new subscription
-        const { error: dbError } = await supabase
-          .from('push_subscriptions')
-          .insert({
-            user_id: user.id,
-            endpoint,
-            p256dh,
-            auth,
-          });
-
-        if (dbError) {
-          console.error('Error saving subscription:', dbError);
-          setError('Failed to save subscription');
-          setIsLoading(false);
-          return false;
-        }
+      if (dbError) {
+        console.error('Error saving subscription:', dbError);
+        setError('Failed to save subscription');
+        setIsLoading(false);
+        return false;
       }
 
       console.log('Subscription saved to database');
