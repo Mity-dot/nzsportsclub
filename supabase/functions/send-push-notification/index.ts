@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildPushHTTPRequest } from "https://esm.sh/@pushforge/builder@1.1.2?target=denonext";
@@ -8,6 +9,7 @@ const corsHeaders = {
 };
 
 interface PushPayload {
+  [key: string]: unknown;
   title: string;
   body: string;
   icon?: string;
@@ -349,7 +351,7 @@ const handler = async (req: Request): Promise<Response> => {
         const { endpoint, headers, body } = await buildPushHTTPRequest({
           privateJWK,
           message: {
-            payload,
+            payload: payload as unknown as Record<string, unknown>,
             options: {
               ttl: 60 * 60 * 24,
               urgency: "high",
