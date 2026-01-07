@@ -54,12 +54,13 @@ export function useWebPushSubscription() {
           }
         }
 
-        // Check if user has an existing subscription in database
+        // Check if user has an existing FCM subscription in database
         if (user) {
           const { data: existingSubscription } = await supabase
             .from('push_subscriptions')
             .select('id')
             .eq('user_id', user.id)
+            .like('endpoint', 'fcm://token/%')
             .maybeSingle();
           
           setIsSubscribed(!!existingSubscription);
@@ -123,12 +124,13 @@ export function useWebPushSubscription() {
         .delete()
         .eq('user_id', user.id);
 
-      // Save the FCM token to database (using endpoint field for compatibility)
+      // Save the FCM token to database with fcm:// prefix for identification
+      const fcmEndpoint = `fcm://token/${fcmToken}`;
       const { error: dbError } = await supabase
         .from('push_subscriptions')
         .insert({
           user_id: user.id,
-          endpoint: fcmToken,
+          endpoint: fcmEndpoint,
           p256dh: 'fcm',
           auth: 'fcm',
         });
