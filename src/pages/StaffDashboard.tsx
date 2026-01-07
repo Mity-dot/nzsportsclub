@@ -816,19 +816,23 @@ export default function StaffDashboard() {
           <TabsContent value="workouts" className="space-y-4">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <h2 className="font-display text-xl font-medium">{t('manageWorkouts')}</h2>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleAutoReserveCardMembers}
-                  disabled={autoReserving}
-                >
-                  {autoReserving ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Crown className="h-4 w-4 mr-2" />
-                  )}
-                  {language === 'bg' ? 'Авто-резервация' : 'Auto-reserve Cards'}
-                </Button>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 bg-muted/50 px-3 py-2 rounded-lg">
+                  <Crown className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-medium">
+                    {language === 'bg' ? 'Авто-резервация' : 'Auto-reserve'}
+                  </span>
+                  <Switch
+                    checked={false}
+                    disabled={autoReserving}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        handleAutoReserveCardMembers();
+                      }
+                    }}
+                  />
+                  {autoReserving && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+                </div>
                 <Dialog open={showWorkoutDialog} onOpenChange={setShowWorkoutDialog}>
                   <DialogTrigger asChild>
                     <Button onClick={() => { setEditingWorkout(null); resetWorkoutForm(); }}>
