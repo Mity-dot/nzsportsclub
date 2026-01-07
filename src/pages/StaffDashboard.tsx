@@ -94,6 +94,7 @@ export default function StaffDashboard() {
   const [uploadingCardImage, setUploadingCardImage] = useState(false);
   const [manageMembersWorkout, setManageMembersWorkout] = useState<Workout | null>(null);
   const [manageMembersReservations, setManageMembersReservations] = useState<Reservation[]>([]);
+  const [autoReserving, setAutoReserving] = useState(false);
   
   // Workout form
   const [showWorkoutDialog, setShowWorkoutDialog] = useState(false);
@@ -311,6 +312,45 @@ export default function StaffDashboard() {
         }
       }
     }
+  };
+
+  const handleAutoReserveCardMembers = async () => {
+    setAutoReserving(true);
+    const cardPriorityWorkouts = workouts.filter(w => w.card_priority_enabled);
+    
+    if (cardPriorityWorkouts.length === 0) {
+      toast({ 
+        title: language === 'bg' ? 'Няма подходящи тренировки' : 'No eligible workouts',
+        description: language === 'bg' 
+          ? 'Няма тренировки с приоритет за картови членове' 
+          : 'No workouts with card member priority enabled'
+      });
+      setAutoReserving(false);
+      return;
+    }
+
+    let totalReserved = 0;
+    for (const workout of cardPriorityWorkouts) {
+      try {
+        const { data, error } = await supabase.functions.invoke('auto-reserve-card-members', {
+          body: { workoutId: workout.id }
+        });
+        if (!error && data?.reserved) {
+          totalReserved += data.reserved;
+        }
+      } catch (e) {
+        console.error('Auto-reserve failed for workout:', workout.id, e);
+      }
+    }
+
+    toast({ 
+      title: language === 'bg' ? 'Авто-резервация завършена' : 'Auto-reserve complete',
+      description: language === 'bg' 
+        ? `${totalReserved} места резервирани за картови членове`
+        : `${totalReserved} spots reserved for card members`
+    });
+    setAutoReserving(false);
+    fetchWorkouts();
   };
 
   const handleMarkAttendance = async (workoutId: string, userId: string, attended: boolean) => {
@@ -599,18 +639,29 @@ export default function StaffDashboard() {
   };
 
   const handleAddMemberToWorkout = async (workoutId: string, memberId: string) => {
-    // A member might have an existing (inactive) reservation row for this workout.
-    // Because the DB enforces a unique (workout_id, user_id), we must re-activate via upsert.
-    const { error } = await supabase.from('reservations').upsert(
-      {
-        workout_id: workoutId,
-        user_id: memberId,
-        is_active: true,
-        cancelled_at: null,
-        reserved_at: new Date().toISOString(),
-      },
-      { onConflict: 'workout_id,user_id' }
-    );
+    // First try to reactivate an existing inactive reservation
+    const { data: existing } = await supabase
+      .from('reservations')
+      .select('id')
+      .eq('workout_id', workoutId)
+      .eq('user_id', memberId)
+      .maybeSingle();
+
+    let error;
+    if (existing) {
+      // Reactivate the existing reservation
+      const result = await supabase
+        .from('reservations')
+        .update({ is_active: true, cancelled_at: null, reserved_at: new Date().toISOString() })
+        .eq('id', existing.id);
+      error = result.error;
+    } else {
+      // Insert new reservation
+      const result = await supabase
+        .from('reservations')
+        .insert({ workout_id: workoutId, user_id: memberId, is_active: true });
+      error = result.error;
+    }
 
     if (error) {
       toast({ variant: 'destructive', title: 'Error', description: error.message });
@@ -763,15 +814,28 @@ export default function StaffDashboard() {
 
           {/* Workouts Tab */}
           <TabsContent value="workouts" className="space-y-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
               <h2 className="font-display text-xl font-medium">{t('manageWorkouts')}</h2>
-              <Dialog open={showWorkoutDialog} onOpenChange={setShowWorkoutDialog}>
-                <DialogTrigger asChild>
-                  <Button onClick={() => { setEditingWorkout(null); resetWorkoutForm(); }}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {t('createWorkout')}
-                  </Button>
-                </DialogTrigger>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={handleAutoReserveCardMembers}
+                  disabled={autoReserving}
+                >
+                  {autoReserving ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Crown className="h-4 w-4 mr-2" />
+                  )}
+                  {language === 'bg' ? 'Авто-резервация' : 'Auto-reserve Cards'}
+                </Button>
+                <Dialog open={showWorkoutDialog} onOpenChange={setShowWorkoutDialog}>
+                  <DialogTrigger asChild>
+                    <Button onClick={() => { setEditingWorkout(null); resetWorkoutForm(); }}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      {t('createWorkout')}
+                    </Button>
+                  </DialogTrigger>
                 <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="font-display">
@@ -894,6 +958,7 @@ export default function StaffDashboard() {
                   </div>
                 </DialogContent>
               </Dialog>
+              </div>
             </div>
 
             <div className="grid gap-4">
