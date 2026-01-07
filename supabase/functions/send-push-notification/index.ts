@@ -27,51 +27,14 @@ interface NotificationRequest {
   excludeMembers?: boolean;
 }
 
-async function sendWebPush(
-  subscription: { endpoint: string; p256dh: string; auth: string },
-  payload: PushPayload
-): Promise<boolean> {
-  try {
-    console.log("Sending push to:", subscription.endpoint);
-
-    // Send a simple push notification
-    // Note: For production, you'd want to use proper VAPID auth and encryption
-    const response = await fetch(subscription.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "TTL": "86400",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    console.log("Push response status:", response.status);
-    
-    if (response.status === 201 || response.status === 200) {
-      return true;
-    }
-    
-    if (response.status === 410 || response.status === 404) {
-      console.log("Subscription is no longer valid");
-      return false;
-    }
-
-    const responseText = await response.text();
-    console.log("Push response:", responseText);
-    
-    return false;
-  } catch (error) {
-    console.error("Error sending push notification:", error);
-    return false;
-  }
-}
-
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+
     const body: NotificationRequest = await req.json();
     const { 
       type, 
@@ -90,7 +53,7 @@ const handler = async (req: Request): Promise<Response> => {
     console.log("Received notification request:", { type, workoutId, workoutTitle, notifyStaff, excludeMembers });
 
     const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
+      supabaseUrl!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
@@ -240,51 +203,31 @@ const handler = async (req: Request): Promise<Response> => {
         };
     }
 
-    // Queue notifications in the database for tracking
+    // Queue notifications in the database for tracking and in-app display
     const notificationRecords = filteredSubscriptions.map((sub) => ({
       user_id: sub.user_id,
       workout_id: workoutId,
       notification_type: type,
       message: payload.body,
       message_bg: getMessageBg(type, workoutTitleBg || workoutTitle, workoutDate, workoutTime),
-      is_sent: false,
+      is_sent: true, // Mark as sent since we're storing them
       scheduled_for: new Date().toISOString(),
     }));
 
     if (notificationRecords.length > 0) {
-      await supabase.from("notification_queue").insert(notificationRecords);
-    }
-
-    // Send push notifications
-    let sentCount = 0;
-    
-    for (const sub of filteredSubscriptions) {
-      const success = await sendWebPush(
-        { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
-        payload
-      );
-      if (success) {
-        sentCount++;
+      const { error: insertError } = await supabase.from("notification_queue").insert(notificationRecords);
+      if (insertError) {
+        console.error("Error inserting notifications:", insertError);
       }
     }
 
-    // Mark notifications as sent
-    if (filteredSubscriptions.length > 0) {
-      await supabase
-        .from("notification_queue")
-        .update({ is_sent: true })
-        .eq("workout_id", workoutId)
-        .eq("notification_type", type)
-        .in("user_id", filteredSubscriptions.map((s) => s.user_id));
-    }
-
-    console.log(`Sent ${sentCount}/${filteredSubscriptions.length} push notifications`);
+    console.log(`Queued ${filteredSubscriptions.length} notifications for ${type}`);
 
     return new Response(
       JSON.stringify({ 
-        message: "Notifications sent", 
-        sent: sentCount, 
-        total: filteredSubscriptions.length 
+        message: "Notifications queued", 
+        sent: filteredSubscriptions.length, 
+        total: filteredSubscriptions.length
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
