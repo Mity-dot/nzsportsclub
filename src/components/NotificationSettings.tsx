@@ -1,4 +1,4 @@
-import { BellOff, BellRing, Loader2, Smartphone } from 'lucide-react';
+import { BellOff, BellRing, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,7 +18,7 @@ import { bg, enUS } from 'date-fns/locale';
 export function NotificationSettings() {
   const { t, language } = useLanguage();
   const { toast } = useToast();
-  const { isSubscribed, isLoading: subLoading, isSupported, isPWA, subscribe, unsubscribe } = useNotificationSubscription();
+  const { isSubscribed, isLoading: subLoading, isSupported, subscribe, unsubscribe } = useNotificationSubscription();
   const { notifications, unreadCount, isLoading: notifLoading, clearNotifications } = useNotifications();
   const [isToggling, setIsToggling] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -120,38 +120,24 @@ export function NotificationSettings() {
       </PopoverTrigger>
       <PopoverContent className="w-80" align="end">
         <div className="space-y-4">
-          {/* PWA limitation message */}
-          {isPWA && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-              <Smartphone className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-amber-800 dark:text-amber-200">
-                {language === 'bg' 
-                  ? 'Push известията не работят в инсталираното приложение. Отворете сайта в браузъра или изтеглете нативното приложение за пълна поддръжка.'
-                  : 'Push notifications are not available in the installed app. Open the site in a browser or download the native app for full support.'}
-              </div>
-            </div>
-          )}
-
           {/* Toggle section */}
-          {!isPWA && (
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <h4 className="font-medium text-sm">{t('notifications')}</h4>
-                <p className="text-xs text-muted-foreground">
-                  {showLoading 
-                    ? (language === 'bg' ? 'Зареждане...' : 'Loading...') 
-                    : isSubscribed 
-                      ? (language === 'bg' ? 'Включени' : 'Enabled')
-                      : (language === 'bg' ? 'Изключени' : 'Disabled')}
-                </p>
-              </div>
-              <Switch
-                checked={isSubscribed}
-                onCheckedChange={handleToggle}
-                disabled={showLoading || !isSupported}
-              />
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <h4 className="font-medium text-sm">{t('notifications')}</h4>
+              <p className="text-xs text-muted-foreground">
+                {showLoading 
+                  ? (language === 'bg' ? 'Зареждане...' : 'Loading...') 
+                  : isSubscribed 
+                    ? (language === 'bg' ? 'Включени' : 'Enabled')
+                    : (language === 'bg' ? 'Изключени' : 'Disabled')}
+              </p>
             </div>
-          )}
+            <Switch
+              checked={isSubscribed}
+              onCheckedChange={handleToggle}
+              disabled={showLoading || !isSupported}
+            />
+          </div>
 
           {/* Notifications list */}
           {isSubscribed && notifications.length > 0 && (
