@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import webpush from "https://esm.sh/web-push@3.6.7";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { buildPushHTTPRequest } from "https://esm.sh/@pushforge/builder@1.1.2?target=denonext";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,7 +16,12 @@ interface PushPayload {
 }
 
 interface NotificationRequest {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full";
+  type:
+    | "new_workout"
+    | "workout_updated"
+    | "workout_deleted"
+    | "spot_freed"
+    | "workout_full";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string;
@@ -29,6 +34,59 @@ interface NotificationRequest {
   excludeMembers?: boolean;
 }
 
+function base64UrlToUint8Array(base64url: string): Uint8Array {
+  const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(base64 + padding);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function uint8ArrayToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+function buildVapidPrivateJwk(
+  vapidPrivateKeySecret: string,
+  vapidPublicKey: string
+): JsonWebKey {
+  const trimmed = vapidPrivateKeySecret.trim();
+
+  // Preferred: store private key as JSON JWK (what PushForge CLI outputs)
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    const jwk = JSON.parse(trimmed) as JsonWebKey;
+    if (!jwk.kty || !jwk.crv || !jwk.d) {
+      throw new Error("VAPID_PRIVATE_KEY JWK missing required fields");
+    }
+    return jwk;
+  }
+
+  // Back-compat: store private key as base64url raw 32 bytes + public key as base64url uncompressed point
+  const pub = base64UrlToUint8Array(vapidPublicKey);
+  if (pub.length !== 65 || pub[0] !== 4) {
+    throw new Error("VAPID_PUBLIC_KEY must be uncompressed P-256 key (65 bytes, starts with 0x04)");
+  }
+
+  const x = uint8ArrayToBase64Url(pub.slice(1, 33));
+  const y = uint8ArrayToBase64Url(pub.slice(33, 65));
+
+  return {
+    alg: "ES256",
+    kty: "EC",
+    crv: "P-256",
+    x,
+    y,
+    d: trimmed,
+  };
+}
+
+function isValidEndpoint(endpoint: unknown): endpoint is string {
+  return typeof endpoint === "string" && endpoint.startsWith("https://");
+}
+
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -36,10 +94,18 @@ const handler = async (req: Request): Promise<Response> => {
 
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const vapidPrivateKeySecret = Deno.env.get("VAPID_PRIVATE_KEY");
     const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
 
-    if (!vapidPrivateKey || !vapidPublicKey) {
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(
+        JSON.stringify({ error: "Backend not configured" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    if (!vapidPrivateKeySecret || !vapidPublicKey) {
       console.error("VAPID keys not configured");
       return new Response(
         JSON.stringify({ error: "Push notifications not configured" }),
@@ -47,12 +113,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // Configure web-push with VAPID details
-    webpush.setVapidDetails(
-      "mailto:nz@sportclub.com",
-      vapidPublicKey,
-      vapidPrivateKey
-    );
+    const privateJWK = buildVapidPrivateJwk(vapidPrivateKeySecret, vapidPublicKey);
 
     const body: NotificationRequest = await req.json();
     const {
@@ -66,25 +127,27 @@ const handler = async (req: Request): Promise<Response> => {
       excludeUserIds,
       priorityOnly,
       notifyStaff,
-      excludeMembers
+      excludeMembers,
     } = body;
 
-    console.log("📨 Notification request:", { type, workoutId, workoutTitle });
+    console.log("📨 Notification request:", {
+      type,
+      workoutId,
+      workoutTitle,
+      notifyStaff: !!notifyStaff,
+      excludeMembers: !!excludeMembers,
+      priorityOnly: !!priorityOnly,
+    });
 
-    const supabase = createClient(
-      supabaseUrl!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Build the query for push subscriptions
     let subscriptionsQuery = supabase.from("push_subscriptions").select("*");
-
     if (targetUserIds && targetUserIds.length > 0) {
       subscriptionsQuery = subscriptionsQuery.in("user_id", targetUserIds);
     }
 
     const { data: subscriptions, error: subError } = await subscriptionsQuery;
-
     if (subError) {
       console.error("Error fetching subscriptions:", subError);
       return new Response(
@@ -104,13 +167,12 @@ const handler = async (req: Request): Promise<Response> => {
     // Filter out excluded users
     let filteredSubscriptions = subscriptions;
     if (excludeUserIds && excludeUserIds.length > 0) {
-      filteredSubscriptions = subscriptions.filter(
+      filteredSubscriptions = filteredSubscriptions.filter(
         (s) => !excludeUserIds.includes(s.user_id)
       );
     }
 
-    // Get all user roles and profiles for filtering
-    const userIds = filteredSubscriptions.map(s => s.user_id);
+    const userIds = filteredSubscriptions.map((s) => s.user_id);
 
     const { data: profiles } = await supabase
       .from("profiles")
@@ -122,15 +184,17 @@ const handler = async (req: Request): Promise<Response> => {
       .select("user_id, role, is_approved")
       .in("user_id", userIds);
 
-    // Create a map for user preferences
     const userLanguages = new Map<string, string>();
-    profiles?.forEach(p => {
-      userLanguages.set(p.user_id, p.preferred_language || 'en');
+    profiles?.forEach((p) => {
+      userLanguages.set(p.user_id, p.preferred_language || "en");
     });
 
     // If priorityOnly, filter to only card members
     if (priorityOnly) {
-      const cardMemberIds = profiles?.filter(p => p.member_type === "card").map(p => p.user_id) || [];
+      const cardMemberIds =
+        profiles
+          ?.filter((p) => p.member_type === "card")
+          .map((p) => p.user_id) || [];
       filteredSubscriptions = filteredSubscriptions.filter((s) =>
         cardMemberIds.includes(s.user_id)
       );
@@ -138,9 +202,13 @@ const handler = async (req: Request): Promise<Response> => {
 
     // If notifyStaff, also include staff subscriptions
     if (notifyStaff) {
-      const staffUserIds = roles?.filter(r =>
-        (r.role === "staff" || r.role === "admin") && r.is_approved
-      ).map(r => r.user_id) || [];
+      const staffUserIds =
+        roles
+          ?.filter(
+            (r) =>
+              (r.role === "staff" || r.role === "admin") && r.is_approved
+          )
+          .map((r) => r.user_id) || [];
 
       const { data: staffSubs } = await supabase
         .from("push_subscriptions")
@@ -152,14 +220,19 @@ const handler = async (req: Request): Promise<Response> => {
         .select("user_id, preferred_language")
         .in("user_id", staffUserIds);
 
-      staffProfiles?.forEach(p => {
-        userLanguages.set(p.user_id, p.preferred_language || 'en');
+      staffProfiles?.forEach((p) => {
+        userLanguages.set(p.user_id, p.preferred_language || "en");
       });
 
       if (staffSubs) {
-        const existingEndpoints = new Set(filteredSubscriptions.map(s => s.endpoint));
+        const existingEndpoints = new Set(
+          filteredSubscriptions.map((s) => s.endpoint)
+        );
         for (const sub of staffSubs) {
-          if (!existingEndpoints.has(sub.endpoint) && !excludeUserIds?.includes(sub.user_id)) {
+          if (
+            !existingEndpoints.has(sub.endpoint) &&
+            !excludeUserIds?.includes(sub.user_id)
+          ) {
             filteredSubscriptions.push(sub);
           }
         }
@@ -169,100 +242,159 @@ const handler = async (req: Request): Promise<Response> => {
     // excludeMembers => keep only staff/admin
     if (excludeMembers) {
       const staffUserIds = new Set(
-        roles?.filter(r => (r.role === "staff" || r.role === "admin") && r.is_approved)
-          .map(r => r.user_id) || []
+        roles
+          ?.filter(
+            (r) =>
+              (r.role === "staff" || r.role === "admin") && r.is_approved
+          )
+          .map((r) => r.user_id) || []
       );
-      filteredSubscriptions = filteredSubscriptions.filter(s => staffUserIds.has(s.user_id));
+      filteredSubscriptions = filteredSubscriptions.filter((s) =>
+        staffUserIds.has(s.user_id)
+      );
     }
 
     // If not notifyStaff and this is a member notification, exclude staff
-    if (!notifyStaff && !excludeMembers && (type === "new_workout" || type === "workout_updated" || type === "spot_freed")) {
+    if (
+      !notifyStaff &&
+      !excludeMembers &&
+      (type === "new_workout" ||
+        type === "workout_updated" ||
+        type === "spot_freed")
+    ) {
       const staffUserIds = new Set(
-        roles?.filter(r => (r.role === "staff" || r.role === "admin") && r.is_approved)
-          .map(r => r.user_id) || []
+        roles
+          ?.filter(
+            (r) =>
+              (r.role === "staff" || r.role === "admin") && r.is_approved
+          )
+          .map((r) => r.user_id) || []
       );
-      filteredSubscriptions = filteredSubscriptions.filter(s => !staffUserIds.has(s.user_id));
+      filteredSubscriptions = filteredSubscriptions.filter(
+        (s) => !staffUserIds.has(s.user_id)
+      );
     }
 
-    // Filter out invalid endpoints (must start with https://)
-    filteredSubscriptions = filteredSubscriptions.filter(s => {
-      const isValid = s.endpoint && s.endpoint.startsWith('https://');
-      if (!isValid) {
-        console.log(`Skipping invalid endpoint: ${s.endpoint}`);
+    // Only allow valid push endpoints
+    filteredSubscriptions = filteredSubscriptions.filter((s) => {
+      if (!isValidEndpoint(s.endpoint)) {
+        console.log(`Skipping invalid endpoint: ${String(s.endpoint)}`);
+        return false;
       }
-      return isValid;
+      return true;
     });
 
     console.log(`📤 Sending to ${filteredSubscriptions.length} subscriptions`);
 
-    // Send push notifications and track results
+    // Insert in-app notifications first (so they still show even if push fails)
+    const notificationRecords = filteredSubscriptions.map((sub) => ({
+      user_id: sub.user_id,
+      workout_id: type === "workout_deleted" ? null : workoutId,
+      notification_type: type,
+      message: getPayload(
+        type,
+        workoutTitle,
+        workoutTitleBg,
+        workoutDate,
+        workoutTime,
+        workoutId,
+        "en"
+      ).body,
+      message_bg: getPayload(
+        type,
+        workoutTitle,
+        workoutTitleBg,
+        workoutDate,
+        workoutTime,
+        workoutId,
+        "bg"
+      ).body,
+      is_sent: true,
+      scheduled_for: new Date().toISOString(),
+    }));
+
+    if (notificationRecords.length > 0) {
+      const { error: insertError } = await supabase
+        .from("notification_queue")
+        .insert(notificationRecords);
+      if (insertError) {
+        console.error("Error inserting notification records:", insertError);
+      }
+    }
+
     const expiredSubscriptions: string[] = [];
     let successCount = 0;
 
     for (const sub of filteredSubscriptions) {
-      const userLang = userLanguages.get(sub.user_id) || 'en';
-      const payload = getPayload(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, workoutId, userLang);
+      const userLang = userLanguages.get(sub.user_id) || "en";
+      const payload = getPayload(
+        type,
+        workoutTitle,
+        workoutTitleBg,
+        workoutDate,
+        workoutTime,
+        workoutId,
+        userLang
+      );
 
-      const pushSubscription = {
+      const subscription = {
         endpoint: sub.endpoint,
         keys: {
           p256dh: sub.p256dh,
-          auth: sub.auth
-        }
+          auth: sub.auth,
+        },
       };
 
       try {
-        await webpush.sendNotification(pushSubscription, JSON.stringify(payload));
-        console.log(`[✓] Push sent to ${sub.user_id}`);
-        successCount++;
-      } catch (error: unknown) {
-        const pushError = error as { statusCode?: number; message?: string };
-        console.error(`[✗] Push failed for ${sub.user_id}:`, pushError.message || error);
-        
-        // 410 Gone or 404 Not Found means subscription is expired
-        if (pushError.statusCode === 410 || pushError.statusCode === 404) {
+        const { endpoint, headers, body } = await buildPushHTTPRequest({
+          privateJWK,
+          message: {
+            payload,
+            options: {
+              ttl: 60 * 60 * 24,
+              urgency: "high",
+            },
+            adminContact: "mailto:nz@sportclub.com",
+          },
+          subscription,
+        });
+
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          headers,
+          body,
+        });
+
+        if (resp.status === 201) {
+          successCount++;
+          continue;
+        }
+
+        const text = await resp.text().catch(() => "");
+        console.log(`[!] Push response: ${resp.status} ${text}`);
+
+        if (resp.status === 410 || resp.status === 404) {
           expiredSubscriptions.push(sub.id);
         }
+      } catch (e) {
+        console.error("Push send failed:", e);
+        // If build/encrypt fails, keep subscription (don't delete) and continue.
       }
     }
 
-    // Delete expired subscriptions
     if (expiredSubscriptions.length > 0) {
       console.log(`🗑️ Deleting ${expiredSubscriptions.length} expired subscriptions`);
-      await supabase
-        .from("push_subscriptions")
-        .delete()
-        .in("id", expiredSubscriptions);
-    }
-
-    // Also store in notification_queue for in-app display
-    const notificationRecords = filteredSubscriptions
-      .filter(sub => !expiredSubscriptions.includes(sub.id))
-      .map((sub) => ({
-        user_id: sub.user_id,
-        workout_id: type === 'workout_deleted' ? null : workoutId,
-        notification_type: type,
-        message: getPayload(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, workoutId, 'en').body,
-        message_bg: getPayload(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, workoutId, 'bg').body,
-        is_sent: true,
-        scheduled_for: new Date().toISOString(),
-      }));
-
-    if (notificationRecords.length > 0) {
-      const { error: insertError } = await supabase.from("notification_queue").insert(notificationRecords);
-      if (insertError) {
-        console.error("Error inserting notification records:", insertError);
-      }
+      await supabase.from("push_subscriptions").delete().in("id", expiredSubscriptions);
     }
 
     console.log(`✅ Sent ${successCount}/${filteredSubscriptions.length} notifications`);
 
     return new Response(
       JSON.stringify({
-        message: "Notifications sent",
+        message: "Notifications processed",
         sent: successCount,
         total: filteredSubscriptions.length,
-        expired: expiredSubscriptions.length
+        expired: expiredSubscriptions.length,
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
@@ -284,10 +416,10 @@ function getPayload(
   workoutId: string,
   language: string
 ): PushPayload {
-  const isBg = language === 'bg';
+  const isBg = language === "bg";
   const displayTitle = isBg && titleBg ? titleBg : title;
-  const formattedDate = date || '';
-  const formattedTime = time || '';
+  const formattedDate = date || "";
+  const formattedTime = time || "";
 
   switch (type) {
     case "new_workout":
