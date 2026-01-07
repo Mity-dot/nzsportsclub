@@ -25,6 +25,18 @@ const formatErr = (err: unknown) => {
   return `${msg}${code}`;
 };
 
+// Detect if running as an installed PWA (not in browser tab)
+const isInstalledPWA = (): boolean => {
+  // Check for standalone display mode (Android/Desktop PWA)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+  // Check for iOS standalone mode
+  const isIOSStandalone = (navigator as { standalone?: boolean }).standalone === true;
+  // Check if running in a WebView-like context without full browser chrome
+  const isMinimalUI = window.matchMedia('(display-mode: minimal-ui)').matches;
+  
+  return isStandalone || isIOSStandalone || isMinimalUI;
+};
+
 export function useNotificationSubscription() {
   const { user } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -32,6 +44,7 @@ export function useNotificationSubscription() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isNative, setIsNative] = useState(false);
+  const [isPWA, setIsPWA] = useState(false);
 
   // Initialize and check subscription status
   useEffect(() => {
@@ -39,6 +52,19 @@ export function useNotificationSubscription() {
       try {
         const native = Capacitor.isNativePlatform();
         setIsNative(native);
+
+        // Check if running as installed PWA
+        const pwa = !native && isInstalledPWA();
+        setIsPWA(pwa);
+
+        if (pwa) {
+          // Installed PWA - push notifications have limited support
+          // We'll still mark as supported for in-app notifications, but real push won't work
+          console.log('Running as installed PWA - push notifications have limited support');
+          setIsSupported(false); // Mark as not supported since FCM doesn't work in PWA context
+          setIsLoading(false);
+          return;
+        }
 
         if (native) {
           // Native platform - use Capacitor push
@@ -392,6 +418,7 @@ export function useNotificationSubscription() {
     isLoading,
     error,
     isNative,
+    isPWA,
     subscribe,
     unsubscribe,
   };
