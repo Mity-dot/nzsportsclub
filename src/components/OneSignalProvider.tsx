@@ -1,4 +1,4 @@
-import { useEffect, useState, createContext, useContext, ReactNode } from 'react';
+import { useEffect, useState, createContext, useContext, useRef, ReactNode, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -28,6 +28,8 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [appId, setAppId] = useState<string | null>(null);
+  const initRef = useRef(false);
+  const userSetRef = useRef<string | null>(null);
 
   // Fetch OneSignal App ID from edge function
   useEffect(() => {
@@ -57,7 +59,8 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
 
   // Initialize OneSignal when appId is available
   useEffect(() => {
-    if (!appId) return;
+    if (!appId || initRef.current) return;
+    initRef.current = true;
 
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     
@@ -73,7 +76,7 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
         console.log('OneSignal initialized');
         setIsInitialized(true);
         
-        const permission = await OneSignal.Notifications.permission;
+        const permission = OneSignal.Notifications.permission;
         setIsSubscribed(permission);
         
         OneSignal.Notifications.addEventListener('permissionChange', (perm: boolean) => {
@@ -98,7 +101,8 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
 
   // Set external user ID when user logs in
   useEffect(() => {
-    if (!isInitialized || !user) return;
+    if (!isInitialized || !user || userSetRef.current === user.id) return;
+    userSetRef.current = user.id;
     
     window.OneSignalDeferred?.push(async function(OneSignal: any) {
       try {
@@ -110,12 +114,12 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [isInitialized, user]);
 
-  const requestPermission = async () => {
+  const requestPermission = useCallback(async () => {
     return new Promise<void>((resolve) => {
       window.OneSignalDeferred?.push(async function(OneSignal: any) {
         try {
           await OneSignal.Notifications.requestPermission();
-          const permission = await OneSignal.Notifications.permission;
+          const permission = OneSignal.Notifications.permission;
           setIsSubscribed(permission);
           resolve();
         } catch (error) {
@@ -124,7 +128,7 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
         }
       });
     });
-  };
+  }, []);
 
   return (
     <OneSignalContext.Provider value={{ isInitialized, isSubscribed, requestPermission }}>

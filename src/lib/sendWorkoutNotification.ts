@@ -15,9 +15,10 @@ export type WorkoutNotificationRequest = {
 };
 
 /**
- * Sends a notification to both:
+ * Sends a notification to:
  * - native devices via FCM
  * - installed PWAs/browsers via standard Web Push
+ * - OneSignal web push
  *
  * Never throws (best-effort).
  */
@@ -25,5 +26,6 @@ export async function sendWorkoutNotification(body: WorkoutNotificationRequest) 
   await Promise.allSettled([
     supabase.functions.invoke("send-fcm-notification", { body }),
     supabase.functions.invoke("send-push-notification", { body }),
+    supabase.functions.invoke("onesignal-notification", { body }),
   ]);
 }
