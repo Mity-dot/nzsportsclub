@@ -1,5 +1,6 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { Resend } from "https://esm.sh/resend@2.0.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,6 +14,7 @@ interface StaffApprovalRequest {
   email: string;
   fullName: string;
   userId: string;
+  sendPending?: boolean; // If true, send emails for all pending requests
 }
 
 const handler = async (req: Request): Promise<Response> => {
@@ -22,94 +24,112 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { email, fullName, userId }: StaffApprovalRequest = await req.json();
+    const resendApiKey = Deno.env.get("RESEND_API_KEY");
+    if (!resendApiKey) {
+      console.error("RESEND_API_KEY not configured");
+      return new Response(
+        JSON.stringify({ error: "Email service not configured" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    const resend = new Resend(resendApiKey);
+    const adminEmail = "slavovdimitar11@gmail.com";
+    
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    const body = await req.json();
+    const { sendPending } = body;
+
+    // If sendPending is true, send emails for all unprocessed pending requests
+    if (sendPending) {
+      const { data: pendingApprovals, error: fetchError } = await supabase
+        .from("pending_staff_approvals")
+        .select("*")
+        .eq("is_processed", false);
+
+      if (fetchError) {
+        console.error("Failed to fetch pending approvals:", fetchError);
+        return new Response(
+          JSON.stringify({ error: "Failed to fetch pending approvals" }),
+          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+
+      if (!pendingApprovals || pendingApprovals.length === 0) {
+        return new Response(
+          JSON.stringify({ success: true, message: "No pending requests" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+
+      console.log(`Sending emails for ${pendingApprovals.length} pending requests`);
+
+      for (const approval of pendingApprovals) {
+        await sendApprovalEmail(resend, adminEmail, approval, supabase);
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: `Sent ${pendingApprovals.length} emails` }),
+        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
+
+    // Single request mode
+    const { email, fullName, userId }: StaffApprovalRequest = body;
     
     // Validate inputs
     if (!email || typeof email !== 'string' || email.length > 255) {
       return new Response(
-        JSON.stringify({ error: "Invalid request" }),
+        JSON.stringify({ error: "Invalid email" }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
     
     if (!fullName || typeof fullName !== 'string' || fullName.length > 100) {
       return new Response(
-        JSON.stringify({ error: "Invalid request" }),
+        JSON.stringify({ error: "Invalid name" }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
     
     if (!userId || !UUID_REGEX.test(userId)) {
       return new Response(
-        JSON.stringify({ error: "Invalid request" }),
+        JSON.stringify({ error: "Invalid user ID" }),
         { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
     
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-    
     // Get the approval token from the pending_staff_approvals table
     const { data: pendingApproval, error: fetchError } = await supabase
       .from("pending_staff_approvals")
-      .select("approval_token")
+      .select("*")
       .eq("user_id", userId)
       .eq("is_processed", false)
       .single();
     
     if (fetchError || !pendingApproval?.approval_token) {
-      console.error("Failed to fetch approval token");
+      console.error("Failed to fetch approval token:", fetchError);
       return new Response(
         JSON.stringify({ error: "Failed to process request" }),
         { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
-    
-    // Build the secure approval URL with token
-    const approvalUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/approve-staff?userId=${encodeURIComponent(userId)}&token=${encodeURIComponent(pendingApproval.approval_token)}`;
-    
-    // Admin email from environment variable for security
-    const adminEmail = Deno.env.get("ADMIN_EMAIL") || "slavovdimitar11@gmail.com";
-    
-    console.log("Staff approval request processed");
-    
-    // For now, just log the request. In production, you'd send an email via Resend
-    // To enable email sending, add RESEND_API_KEY secret and uncomment below:
-    
-    /*
-    const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
-    
-    await resend.emails.send({
-      from: "NZ Sport Club <noreply@yourdomain.com>",
-      to: [adminEmail],
-      subject: "New Staff Account Request - NZ Sport Club",
-      html: `
-        <h1>New Staff Account Request</h1>
-        <p>A new staff account request has been submitted:</p>
-        <ul>
-          <li><strong>Name:</strong> ${fullName}</li>
-          <li><strong>Email:</strong> ${email}</li>
-        </ul>
-        <p>To approve this request, click the button below:</p>
-        <a href="${approvalUrl}" style="display: inline-block; padding: 12px 24px; background-color: #E8C4B8; color: #333; text-decoration: none; border-radius: 8px; font-weight: bold;">
-          Approve Staff Account
-        </a>
-        <p><small>This link can only be used once and will expire after use.</small></p>
-      `,
-    });
-    */
+
+    await sendApprovalEmail(resend, adminEmail, pendingApproval, supabase);
 
     return new Response(
-      JSON.stringify({ success: true, message: "Request processed" }),
+      JSON.stringify({ success: true, message: "Approval email sent" }),
       {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       }
     );
   } catch (error: any) {
-    console.error("Error in send-staff-approval-email function");
+    console.error("Error in send-staff-approval-email function:", error);
     return new Response(
       JSON.stringify({ error: "An error occurred" }),
       {
@@ -119,5 +139,83 @@ const handler = async (req: Request): Promise<Response> => {
     );
   }
 };
+
+async function sendApprovalEmail(
+  resend: any,
+  adminEmail: string,
+  approval: any,
+  supabase: any
+) {
+  const baseUrl = Deno.env.get("SUPABASE_URL");
+  const approveUrl = `${baseUrl}/functions/v1/approve-staff?userId=${encodeURIComponent(approval.user_id)}&token=${encodeURIComponent(approval.approval_token)}&action=approve`;
+  const denyUrl = `${baseUrl}/functions/v1/approve-staff?userId=${encodeURIComponent(approval.user_id)}&token=${encodeURIComponent(approval.approval_token)}&action=deny`;
+
+  const emailHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #faf8f6;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+          <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);">
+            <h1 style="color: #2d2520; font-size: 24px; margin: 0 0 24px 0; text-align: center;">
+              New Staff Account Request
+            </h1>
+            
+            <p style="color: #6b6158; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
+              A new user is requesting staff access to NZ Sport Club:
+            </p>
+            
+            <div style="background: #f5f0ed; border-radius: 12px; padding: 20px; margin: 0 0 32px 0;">
+              <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                  <td style="color: #6b6158; padding: 8px 0; font-size: 14px;">Name:</td>
+                  <td style="color: #2d2520; padding: 8px 0; font-size: 14px; font-weight: 600;">${approval.full_name || 'Not provided'}</td>
+                </tr>
+                <tr>
+                  <td style="color: #6b6158; padding: 8px 0; font-size: 14px;">Email:</td>
+                  <td style="color: #2d2520; padding: 8px 0; font-size: 14px; font-weight: 600;">${approval.email}</td>
+                </tr>
+                <tr>
+                  <td style="color: #6b6158; padding: 8px 0; font-size: 14px;">Requested:</td>
+                  <td style="color: #2d2520; padding: 8px 0; font-size: 14px; font-weight: 600;">${new Date(approval.requested_at).toLocaleString()}</td>
+                </tr>
+              </table>
+            </div>
+            
+            <div style="text-align: center;">
+              <a href="${approveUrl}" style="display: inline-block; padding: 14px 32px; background-color: #22c55e; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 0 8px 16px 8px;">
+                ✓ Approve
+              </a>
+              <a href="${denyUrl}" style="display: inline-block; padding: 14px 32px; background-color: #ef4444; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 0 8px 16px 8px;">
+                ✕ Deny
+              </a>
+            </div>
+            
+            <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 24px 0 0 0;">
+              These links can only be used once and will expire after use.
+            </p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  try {
+    const emailResponse = await resend.emails.send({
+      from: "NZ Sport Club <onboarding@resend.dev>",
+      to: [adminEmail],
+      subject: `Staff Request: ${approval.full_name || approval.email}`,
+      html: emailHtml,
+    });
+
+    console.log("Approval email sent successfully:", emailResponse);
+  } catch (emailError: any) {
+    console.error("Failed to send email:", emailError);
+    throw emailError;
+  }
+}
 
 serve(handler);
