@@ -8,7 +8,8 @@ const corsHeaders = {
 };
 
 // UUID validation regex
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface StaffApprovalRequest {
   email: string;
@@ -16,6 +17,8 @@ interface StaffApprovalRequest {
   userId: string;
   sendPending?: boolean; // If true, send emails for all pending requests
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const handler = async (req: Request): Promise<Response> => {
   // Handle CORS preflight requests
@@ -27,15 +30,15 @@ const handler = async (req: Request): Promise<Response> => {
     const resendApiKey = Deno.env.get("RESEND_API_KEY");
     if (!resendApiKey) {
       console.error("RESEND_API_KEY not configured");
-      return new Response(
-        JSON.stringify({ error: "Email service not configured" }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
+      return new Response(JSON.stringify({ error: "Email service not configured" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
     const resend = new Resend(resendApiKey);
     const adminEmail = "slavovdimitar11@gmail.com";
-    
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -53,56 +56,82 @@ const handler = async (req: Request): Promise<Response> => {
 
       if (fetchError) {
         console.error("Failed to fetch pending approvals:", fetchError);
-        return new Response(
-          JSON.stringify({ error: "Failed to fetch pending approvals" }),
-          { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
+        return new Response(JSON.stringify({ error: "Failed to fetch pending approvals" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
       }
 
       if (!pendingApprovals || pendingApprovals.length === 0) {
-        return new Response(
-          JSON.stringify({ success: true, message: "No pending requests" }),
-          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
-        );
+        return new Response(JSON.stringify({ success: true, message: "No pending requests" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
       }
 
       console.log(`Sending emails for ${pendingApprovals.length} pending requests`);
 
+      const results: Array<{ user_id: string; ok: boolean; error?: string }> = [];
+
+      // Resend rate limits: keep under ~2 req/sec
       for (const approval of pendingApprovals) {
-        await sendApprovalEmail(resend, adminEmail, approval, supabase);
+        // small spacing even on success
+        await sleep(600);
+
+        try {
+          await sendApprovalEmail(resend, adminEmail, approval);
+          results.push({ user_id: approval.user_id, ok: true });
+        } catch (e: any) {
+          console.error("Failed sending approval email:", e);
+          results.push({
+            user_id: approval.user_id,
+            ok: false,
+            error: e?.message || "Unknown error",
+          });
+        }
       }
 
+      const failed = results.filter((r) => !r.ok);
+
       return new Response(
-        JSON.stringify({ success: true, message: `Sent ${pendingApprovals.length} emails` }),
-        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        JSON.stringify({
+          success: failed.length === 0,
+          sent: results.length - failed.length,
+          failed: failed.length,
+          failures: failed,
+        }),
+        {
+          status: failed.length === 0 ? 200 : 207,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
       );
     }
 
     // Single request mode
     const { email, fullName, userId }: StaffApprovalRequest = body;
-    
+
     // Validate inputs
-    if (!email || typeof email !== 'string' || email.length > 255) {
-      return new Response(
-        JSON.stringify({ error: "Invalid email" }),
-        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
+    if (!email || typeof email !== "string" || email.length > 255) {
+      return new Response(JSON.stringify({ error: "Invalid email" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
-    
-    if (!fullName || typeof fullName !== 'string' || fullName.length > 100) {
-      return new Response(
-        JSON.stringify({ error: "Invalid name" }),
-        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
+
+    if (!fullName || typeof fullName !== "string" || fullName.length > 100) {
+      return new Response(JSON.stringify({ error: "Invalid name" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
-    
+
     if (!userId || !UUID_REGEX.test(userId)) {
-      return new Response(
-        JSON.stringify({ error: "Invalid user ID" }),
-        { status: 400, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
+      return new Response(JSON.stringify({ error: "Invalid user ID" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
-    
+
     // Get the approval token from the pending_staff_approvals table
     const { data: pendingApproval, error: fetchError } = await supabase
       .from("pending_staff_approvals")
@@ -110,42 +139,31 @@ const handler = async (req: Request): Promise<Response> => {
       .eq("user_id", userId)
       .eq("is_processed", false)
       .single();
-    
+
     if (fetchError || !pendingApproval?.approval_token) {
       console.error("Failed to fetch approval token:", fetchError);
-      return new Response(
-        JSON.stringify({ error: "Failed to process request" }),
-        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
-    }
-
-    await sendApprovalEmail(resend, adminEmail, pendingApproval, supabase);
-
-    return new Response(
-      JSON.stringify({ success: true, message: "Approval email sent" }),
-      {
-        status: 200,
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
-    );
-  } catch (error: any) {
-    console.error("Error in send-staff-approval-email function:", error);
-    return new Response(
-      JSON.stringify({ error: "An error occurred" }),
-      {
+      return new Response(JSON.stringify({ error: "Failed to process request" }), {
         status: 500,
         headers: { "Content-Type": "application/json", ...corsHeaders },
-      }
-    );
+      });
+    }
+
+    await sendApprovalEmail(resend, adminEmail, pendingApproval);
+
+    return new Response(JSON.stringify({ success: true, message: "Approval email sent" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
+  } catch (error: any) {
+    console.error("Error in send-staff-approval-email function:", error);
+    return new Response(JSON.stringify({ error: error?.message || "An error occurred" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
   }
 };
 
-async function sendApprovalEmail(
-  resend: any,
-  adminEmail: string,
-  approval: any,
-  supabase: any
-) {
+async function sendApprovalEmail(resend: any, adminEmail: string, approval: any) {
   const baseUrl = Deno.env.get("SUPABASE_URL");
   const approveUrl = `${baseUrl}/functions/v1/approve-staff?userId=${encodeURIComponent(approval.user_id)}&token=${encodeURIComponent(approval.approval_token)}&action=approve`;
   const denyUrl = `${baseUrl}/functions/v1/approve-staff?userId=${encodeURIComponent(approval.user_id)}&token=${encodeURIComponent(approval.approval_token)}&action=deny`;
@@ -163,16 +181,16 @@ async function sendApprovalEmail(
             <h1 style="color: #2d2520; font-size: 24px; margin: 0 0 24px 0; text-align: center;">
               New Staff Account Request
             </h1>
-            
+
             <p style="color: #6b6158; font-size: 16px; line-height: 1.6; margin: 0 0 24px 0;">
               A new user is requesting staff access to NZ Sport Club:
             </p>
-            
+
             <div style="background: #f5f0ed; border-radius: 12px; padding: 20px; margin: 0 0 32px 0;">
               <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                   <td style="color: #6b6158; padding: 8px 0; font-size: 14px;">Name:</td>
-                  <td style="color: #2d2520; padding: 8px 0; font-size: 14px; font-weight: 600;">${approval.full_name || 'Not provided'}</td>
+                  <td style="color: #2d2520; padding: 8px 0; font-size: 14px; font-weight: 600;">${approval.full_name || "Not provided"}</td>
                 </tr>
                 <tr>
                   <td style="color: #6b6158; padding: 8px 0; font-size: 14px;">Email:</td>
@@ -184,18 +202,18 @@ async function sendApprovalEmail(
                 </tr>
               </table>
             </div>
-            
+
             <div style="text-align: center;">
               <a href="${approveUrl}" style="display: inline-block; padding: 14px 32px; background-color: #22c55e; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 0 8px 16px 8px;">
-                ✓ Approve
+                &#10003; Approve
               </a>
               <a href="${denyUrl}" style="display: inline-block; padding: 14px 32px; background-color: #ef4444; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; margin: 0 8px 16px 8px;">
-                ✕ Deny
+                &#10005; Deny
               </a>
             </div>
-            
+
             <p style="color: #9ca3af; font-size: 12px; text-align: center; margin: 24px 0 0 0;">
-              These links can only be used once and will expire after use.
+              For safety, the link opens a confirmation page before applying changes.
             </p>
           </div>
         </div>
@@ -203,7 +221,8 @@ async function sendApprovalEmail(
     </html>
   `;
 
-  try {
+  // simple retry for 429s
+  for (let attempt = 1; attempt <= 3; attempt++) {
     const emailResponse = await resend.emails.send({
       from: "NZ Sport Club <onboarding@resend.dev>",
       to: [adminEmail],
@@ -211,10 +230,20 @@ async function sendApprovalEmail(
       html: emailHtml,
     });
 
-    console.log("Approval email sent successfully:", emailResponse);
-  } catch (emailError: any) {
-    console.error("Failed to send email:", emailError);
-    throw emailError;
+    if (!emailResponse?.error) {
+      console.log("Approval email sent successfully:", emailResponse);
+      return;
+    }
+
+    const code = emailResponse.error.statusCode;
+    console.error("Resend error:", emailResponse.error);
+
+    if (code === 429 && attempt < 3) {
+      await sleep(900);
+      continue;
+    }
+
+    throw new Error(emailResponse.error.message || "Failed to send email");
   }
 }
 
