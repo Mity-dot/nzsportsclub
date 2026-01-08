@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.send-fcm-notification]
 verify_jwt = false
+
+[functions.onesignal-notification]
+verify_jwt = false
+
+[functions.get-onesignal-app-id]
+verify_jwt = false
