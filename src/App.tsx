@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { PushNotificationHandler } from "@/components/PushNotificationHandler";
+import { OneSignalProvider } from "@/components/OneSignalProvider";
 import Index from "./pages/Index";
 import LanguageSelect from "./pages/LanguageSelect";
 import Auth from "./pages/Auth";
@@ -19,21 +20,23 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <LanguageProvider>
       <AuthProvider>
-        <TooltipProvider>
-          <PushNotificationHandler />
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/language" element={<LanguageSelect />} />
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/staff" element={<StaffDashboard />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
+        <OneSignalProvider>
+          <TooltipProvider>
+            <PushNotificationHandler />
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/language" element={<LanguageSelect />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/staff" element={<StaffDashboard />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </OneSignalProvider>
       </AuthProvider>
     </LanguageProvider>
   </QueryClientProvider>
