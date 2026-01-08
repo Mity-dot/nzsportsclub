@@ -54,15 +54,21 @@ serve(async (req) => {
     if (targetUserIds && targetUserIds.length > 0) {
       // Use specified target users
       userIds = targetUserIds;
+    } else if (notifyStaff && excludeMembers) {
+      // Only notify staff (for workout_full notifications)
+      const { data: staffRoles } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .in("role", ["staff", "admin"])
+        .eq("is_approved", true);
+
+      userIds = staffRoles?.map(r => r.user_id) || [];
+      console.log(`Found ${userIds.length} staff users to notify`);
     } else {
-      // Get all users to notify based on criteria
+      // Get members to notify based on criteria
       let query = supabase.from("profiles").select("user_id, member_type, preferred_language");
 
       if (priorityOnly) {
-        query = query.eq("member_type", "card");
-      }
-
-      if (excludeMembers) {
         query = query.eq("member_type", "card");
       }
 
@@ -73,18 +79,22 @@ serve(async (req) => {
         throw profilesError;
       }
 
-      userIds = profiles?.map(p => p.user_id) || [];
+      // Get staff user IDs to exclude from member notifications
+      const { data: staffRoles } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .in("role", ["staff", "admin"])
+        .eq("is_approved", true);
+
+      const staffIds = new Set(staffRoles?.map(r => r.user_id) || []);
+      
+      // Only include non-staff profiles (members)
+      userIds = profiles?.filter(p => !staffIds.has(p.user_id)).map(p => p.user_id) || [];
+      console.log(`Found ${userIds.length} member users to notify`);
 
       // Optionally add staff
       if (notifyStaff) {
-        const { data: staffRoles } = await supabase
-          .from("user_roles")
-          .select("user_id")
-          .in("role", ["staff", "admin"])
-          .eq("is_approved", true);
-
-        const staffIds = staffRoles?.map(r => r.user_id) || [];
-        userIds = [...new Set([...userIds, ...staffIds])];
+        userIds = [...new Set([...userIds, ...Array.from(staffIds)])];
       }
     }
 
