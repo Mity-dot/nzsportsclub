@@ -23,3 +23,9 @@ verify_jwt = false
 
 [functions.get-onesignal-app-id]
 verify_jwt = false
+
+[functions.unified-notification]
+verify_jwt = false
+
+[functions.generate-vapid-keys]
+verify_jwt = false

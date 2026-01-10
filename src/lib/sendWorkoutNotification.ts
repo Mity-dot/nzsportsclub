@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type WorkoutNotificationRequest = {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
@@ -9,23 +9,29 @@ export type WorkoutNotificationRequest = {
   workoutTime?: string;
   targetUserIds?: string[];
   excludeUserIds?: string[];
-  priorityOnly?: boolean;
-  notifyStaff?: boolean;
-  excludeMembers?: boolean;
 };
 
 /**
- * Sends a notification to:
- * - native devices via FCM
- * - installed PWAs/browsers via standard Web Push
- * - OneSignal web push
+ * Sends a notification via the unified notification edge function.
+ * This handles:
+ * - In-app notifications (notification_queue)
+ * - Web Push (VAPID)
+ * - FCM (native Android/iOS)
+ * - OneSignal
  *
  * Never throws (best-effort).
  */
 export async function sendWorkoutNotification(body: WorkoutNotificationRequest) {
-  await Promise.allSettled([
-    supabase.functions.invoke("send-fcm-notification", { body }),
-    supabase.functions.invoke("send-push-notification", { body }),
-    supabase.functions.invoke("onesignal-notification", { body }),
-  ]);
+  try {
+    const { data, error } = await supabase.functions.invoke("unified-notification", { body });
+    if (error) {
+      console.error("Notification error:", error);
+    } else {
+      console.log("Notification result:", data);
+    }
+    return data;
+  } catch (e) {
+    console.error("Failed to send notification:", e);
+    return null;
+  }
 }

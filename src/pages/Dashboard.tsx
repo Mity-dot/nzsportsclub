@@ -474,15 +474,13 @@ export default function Dashboard() {
           .eq('is_active', true);
         
         if (count && count >= workout.max_spots) {
-          // Notify staff that workout is full
+          // Notify when workout is full (unified notification handles staff targeting for this type)
           try {
             await sendWorkoutNotification({
               type: 'workout_full',
               workoutId: workout.id,
               workoutTitle: workout.title,
               workoutTitleBg: workout.title_bg,
-              notifyStaff: true,
-              excludeMembers: true,
             });
           } catch (e) {
             console.log('Push notification failed');
@@ -519,7 +517,7 @@ export default function Dashboard() {
       fetchReservations();
       fetchWorkouts();
       
-      // Send push notification for freed spot (to members and staff)
+      // Send push notification for freed spot
       if (workout) {
         try {
           await sendWorkoutNotification({
@@ -527,8 +525,7 @@ export default function Dashboard() {
             workoutId: workout.id,
             workoutTitle: workout.title,
             workoutTitleBg: workout.title_bg,
-            excludeUserIds: [user.id],
-            notifyStaff: true, // Also notify staff
+            excludeUserIds: [user.id], // Exclude the user who cancelled
           });
         } catch (e) {
           console.log('Push notification failed');
