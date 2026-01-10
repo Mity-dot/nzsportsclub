@@ -230,23 +230,9 @@ export default function StaffDashboard() {
       fetchWorkouts();
       
       if (data) {
-        // Send push notification for new workout (to all members, exclude card members if priority is enabled)
-        try {
-          await sendWorkoutNotification({
-            type: 'new_workout',
-            workoutId: data.id,
-            workoutTitle: data.title,
-            workoutTitleBg: data.title_bg,
-            workoutDate: data.workout_date,
-            workoutTime: data.start_time?.slice(0, 5),
-            // If card priority is enabled, notify card members separately via auto-reserve
-            priorityOnly: false,
-          });
-        } catch (e) {
-          console.log('Push notification failed, but workout created');
-        }
+        // Auto-reserve for card members FIRST if card priority is enabled
+        let autoReservedUserIds: string[] = [];
         
-        // Auto-reserve for card members if card priority is enabled
         if (data.card_priority_enabled && data.auto_reserve_enabled) {
           try {
             console.log('Triggering auto-reserve for new workout:', data.id);
@@ -257,16 +243,38 @@ export default function StaffDashboard() {
               console.error('Auto-reserve error:', autoReserveError);
             } else if (autoReserveResult?.reserved > 0) {
               console.log('Auto-reserved', autoReserveResult.reserved, 'spots');
-              // Mark as executed
-              await supabase
-                .from('workouts')
-                .update({ auto_reserve_executed: true })
-                .eq('id', data.id);
+              // The auto-reserve function already marks it as executed and sends notifications to reserved members
               fetchWorkouts();
             }
           } catch (e) {
             console.error('Auto-reserve failed:', e);
           }
+        }
+        
+        // Send push notification for new workout to all non-card members
+        // (card members already got notified via auto-reserve if applicable)
+        try {
+          // Get card member IDs to exclude from general notification if auto-reserve happened
+          let excludeUserIds: string[] = [];
+          if (data.card_priority_enabled) {
+            const { data: cardMembers } = await supabase
+              .from('profiles')
+              .select('user_id')
+              .eq('member_type', 'card');
+            excludeUserIds = cardMembers?.map(m => m.user_id) || [];
+          }
+          
+          await sendWorkoutNotification({
+            type: 'new_workout',
+            workoutId: data.id,
+            workoutTitle: data.title,
+            workoutTitleBg: data.title_bg,
+            workoutDate: data.workout_date,
+            workoutTime: data.start_time?.slice(0, 5),
+            excludeUserIds: excludeUserIds,
+          });
+        } catch (e) {
+          console.log('Push notification failed, but workout created');
         }
       }
     }
@@ -701,15 +709,13 @@ export default function StaffDashboard() {
           .eq('is_active', true);
 
         if (count && count >= workout.max_spots) {
-          // Notify staff that workout is full
+          // Notify when workout is full (unified notification handles staff targeting for this type)
           try {
             await sendWorkoutNotification({
               type: 'workout_full',
               workoutId: workout.id,
               workoutTitle: workout.title,
               workoutTitleBg: workout.title_bg,
-              notifyStaff: true,
-              excludeMembers: true,
             });
           } catch (e) {
             console.log('Push notification failed');
