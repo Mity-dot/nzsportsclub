@@ -145,16 +145,13 @@ export default function Dashboard() {
     if (data) {
       setWorkouts(data as Workout[]);
       
-      // Fetch reservation counts
+      // Fetch reservation counts using RPC (bypasses RLS for consistent counts)
       const counts: Record<string, number> = {};
-      for (const workout of data) {
-        const { count } = await supabase
-          .from('reservations')
-          .select('*', { count: 'exact', head: true })
-          .eq('workout_id', workout.id)
-          .eq('is_active', true);
-        counts[workout.id] = count || 0;
-      }
+      await Promise.all(data.map(async (workout) => {
+        const { data: countData } = await supabase
+          .rpc('get_reservation_count', { p_workout_id: workout.id });
+        counts[workout.id] = countData ?? 0;
+      }));
       setReservationCounts(counts);
       
       // Check for auto-reserve triggers (only for staff viewing dashboard)
