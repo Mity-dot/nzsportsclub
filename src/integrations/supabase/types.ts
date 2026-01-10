@@ -369,6 +369,7 @@ export type Database = {
         Args: { p_workout_id: string }
         Returns: number
       }
+      get_reservation_count: { Args: { p_workout_id: string }; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
