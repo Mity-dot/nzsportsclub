@@ -97,16 +97,17 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Found ${cardMembers.length} card members with auto-reserve enabled`);
 
-    // Filter to only include members whose preference matches the workout type
-    // Members with NULL preference get auto-reserved for ALL workout types
-    // Members with a specific preference only get auto-reserved for matching types
+    // Filter to only include members whose preference EXACTLY matches the workout type
+    // Members with NULL preference are NOT auto-reserved (they must select a preference)
+    // Members with 'early' preference only get early workouts
+    // Members with 'late' preference only get late workouts
     const eligibleCardMembers = cardMembers.filter(m => {
-      // If member has no preference (null), auto-reserve for all types
+      // If member has no preference (null), skip them - they need to select a preference
       if (m.preferred_workout_type === null || m.preferred_workout_type === undefined) {
-        console.log(`Member ${m.user_id}: no preference, eligible for all types`);
-        return true;
+        console.log(`Member ${m.user_id}: no preference set, NOT eligible for auto-reserve`);
+        return false;
       }
-      // If member has a specific preference, check if it matches
+      // Only exact matches are eligible
       const matches = m.preferred_workout_type === workoutType;
       console.log(`Member ${m.user_id}: prefers ${m.preferred_workout_type}, workout is ${workoutType}, eligible: ${matches}`);
       return matches;
