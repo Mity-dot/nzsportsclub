@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface NotificationRequest {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
@@ -73,6 +73,13 @@ function getNotificationContent(
         body: isBg 
           ? `"${displayTitle}" вече е напълно заета. Всички места са резервирани.`
           : `"${displayTitle}" is now fully booked. All spots have been reserved.`,
+      };
+    case "waiting_list_promoted":
+      return {
+        title: isBg ? "🎉 Мястото ви е потвърдено!" : "🎉 Your Spot is Confirmed!",
+        body: isBg 
+          ? `Освободи се място за "${displayTitle}" и вие бяхте резервирани от списъка за изчакване!`
+          : `A spot opened up for "${displayTitle}" and you've been moved from the waiting list!`,
       };
     default:
       return {

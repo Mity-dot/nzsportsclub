@@ -517,18 +517,35 @@ export default function Dashboard() {
       fetchReservations();
       fetchWorkouts();
       
-      // Send push notification for freed spot
+      // Automatically promote from waiting list
       if (workout) {
         try {
-          await sendWorkoutNotification({
-            type: 'spot_freed',
-            workoutId: workout.id,
-            workoutTitle: workout.title,
-            workoutTitleBg: workout.title_bg,
-            excludeUserIds: [user.id], // Exclude the user who cancelled
-          });
+          const { data: promotedUserId, error: promoteError } = await supabase
+            .rpc('promote_from_waiting_list', { p_workout_id: workoutId });
+          
+          if (promotedUserId && !promoteError) {
+            console.log('Promoted user from waiting list:', promotedUserId);
+            
+            // Notify the promoted user
+            await sendWorkoutNotification({
+              type: 'waiting_list_promoted',
+              workoutId: workout.id,
+              workoutTitle: workout.title,
+              workoutTitleBg: workout.title_bg,
+              targetUserIds: [promotedUserId],
+            });
+          } else {
+            // No one on waiting list, send spot freed notification
+            await sendWorkoutNotification({
+              type: 'spot_freed',
+              workoutId: workout.id,
+              workoutTitle: workout.title,
+              workoutTitleBg: workout.title_bg,
+              excludeUserIds: [user.id],
+            });
+          }
         } catch (e) {
-          console.log('Push notification failed');
+          console.log('Waiting list promotion or notification failed:', e);
         }
       }
     }
