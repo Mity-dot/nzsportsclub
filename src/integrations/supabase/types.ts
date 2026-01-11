@@ -383,6 +383,10 @@ export type Database = {
         Args: { p_workout_id: string }
         Returns: string
       }
+      promote_waiting_list_until_full: {
+        Args: { p_workout_id: string }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "admin" | "staff" | "card_member" | "member"

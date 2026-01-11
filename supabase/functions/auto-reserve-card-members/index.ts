@@ -151,16 +151,20 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`Creating reservations for ${membersToReserveSlice.length} card members`);
 
-    // Create reservations for card members
+    // Create reservations for card members (upsert to handle duplicates gracefully)
     const reservations = membersToReserveSlice.map(userId => ({
       workout_id: workoutId,
       user_id: userId,
       is_active: true,
+      reserved_at: new Date().toISOString(),
     }));
 
     const { error: insertError } = await supabase
       .from("reservations")
-      .insert(reservations);
+      .upsert(reservations, { 
+        onConflict: "workout_id,user_id",
+        ignoreDuplicates: false 
+      });
 
     if (insertError) {
       console.error("Error creating reservations:", insertError);
