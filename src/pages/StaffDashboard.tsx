@@ -21,7 +21,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, Plus, Edit, Trash2, Calendar, Clock, Users, 
-  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2, UsersRound
+  UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2, UsersRound, Sunrise, Moon
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { motion } from 'framer-motion';
@@ -52,6 +52,8 @@ interface Profile {
   phone?: string | null;
   member_type: string;
   card_image_url: string | null;
+  auto_reserve_enabled?: boolean;
+  preferred_workout_type?: string | null;
 }
 
 interface UserRole {
@@ -142,10 +144,10 @@ export default function StaffDashboard() {
   };
 
   const fetchMembers = async () => {
-    // Fetch profiles
+    // Fetch profiles including auto-reserve preferences
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, user_id, full_name, email, phone, member_type, card_image_url')
+      .select('id, user_id, full_name, email, phone, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
       .order('full_name');
     
     if (profiles) {
@@ -184,7 +186,7 @@ export default function StaffDashboard() {
       const userIds = reservations.map(r => r.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, member_type, card_image_url')
+        .select('id, user_id, full_name, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
         .in('user_id', userIds);
       
       const reservationsWithProfiles = reservations.map(r => ({
@@ -654,7 +656,7 @@ export default function StaffDashboard() {
       const userIds = reservations.map(r => r.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, member_type, card_image_url')
+        .select('id, user_id, full_name, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
         .in('user_id', userIds);
       
       const reservationsWithProfiles = reservations.map(r => ({
@@ -1106,7 +1108,7 @@ export default function StaffDashboard() {
                           />
                         ) : null}
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-medium">{member.full_name || 'Member'}</span>
                             {status === 'card' && (
                               <Badge className="bg-primary/20">
@@ -1123,6 +1125,16 @@ export default function StaffDashboard() {
                             {status === 'inactive' && (
                               <Badge variant="outline" className="text-muted-foreground border-muted">
                                 {t('inactive')}
+                              </Badge>
+                            )}
+                            {/* Auto-reserve indicator for card members */}
+                            {member.member_type === 'card' && member.auto_reserve_enabled && member.preferred_workout_type && (
+                              <Badge variant="outline" className="text-xs py-0.5" title={`Auto-reserve: ${member.preferred_workout_type}`}>
+                                {member.preferred_workout_type === 'early' ? (
+                                  <Sunrise className="h-3 w-3 text-amber-500" />
+                                ) : (
+                                  <Moon className="h-3 w-3 text-indigo-500" />
+                                )}
                               </Badge>
                             )}
                           </div>
@@ -1249,14 +1261,28 @@ export default function StaffDashboard() {
                 <div className="space-y-3 py-2">
                   {workoutReservations.map((res) => (
                     <div key={res.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
-                      <div>
-                        <p className="font-medium">{res.profiles?.full_name || 'Member'}</p>
-                        {res.profiles?.member_type === 'card' && (
-                          <Badge className="bg-primary/20 text-xs">
-                            <Crown className="h-3 w-3 mr-1" />
-                            Card
-                          </Badge>
-                        )}
+                      <div className="flex items-center gap-2">
+                        <div>
+                          <p className="font-medium">{res.profiles?.full_name || 'Member'}</p>
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {res.profiles?.member_type === 'card' && (
+                              <Badge className="bg-primary/20 text-xs">
+                                <Crown className="h-3 w-3 mr-1" />
+                                Card
+                              </Badge>
+                            )}
+                            {/* Auto-reserve indicator */}
+                            {res.profiles?.member_type === 'card' && res.profiles?.auto_reserve_enabled && res.profiles?.preferred_workout_type && (
+                              <Badge variant="outline" className="text-xs py-0" title={`Auto-reserve: ${res.profiles.preferred_workout_type}`}>
+                                {res.profiles.preferred_workout_type === 'early' ? (
+                                  <Sunrise className="h-3 w-3 text-amber-500" />
+                                ) : (
+                                  <Moon className="h-3 w-3 text-indigo-500" />
+                                )}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -1404,12 +1430,24 @@ export default function StaffDashboard() {
                             )}
                             <div>
                               <p className="text-sm font-medium">{res.profiles?.full_name || 'Member'}</p>
-                              {res.profiles?.member_type === 'card' && (
-                                <Badge className="bg-primary/20 text-xs py-0">
-                                  <Crown className="h-2.5 w-2.5 mr-1" />
-                                  Card
-                                </Badge>
-                              )}
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {res.profiles?.member_type === 'card' && (
+                                  <Badge className="bg-primary/20 text-xs py-0">
+                                    <Crown className="h-2.5 w-2.5 mr-1" />
+                                    Card
+                                  </Badge>
+                                )}
+                                {/* Auto-reserve indicator */}
+                                {res.profiles?.member_type === 'card' && res.profiles?.auto_reserve_enabled && res.profiles?.preferred_workout_type && (
+                                  <Badge variant="outline" className="text-xs py-0" title={`Auto-reserve: ${res.profiles.preferred_workout_type}`}>
+                                    {res.profiles.preferred_workout_type === 'early' ? (
+                                      <Sunrise className="h-2.5 w-2.5 text-amber-500" />
+                                    ) : (
+                                      <Moon className="h-2.5 w-2.5 text-indigo-500" />
+                                    )}
+                                  </Badge>
+                                )}
+                              </div>
                             </div>
                           </div>
                           <Button
@@ -1462,12 +1500,24 @@ export default function StaffDashboard() {
                               )}
                               <div>
                                 <p className="text-sm font-medium">{member.full_name || 'Member'}</p>
-                                {member.member_type === 'card' && (
-                                  <Badge className="bg-primary/20 text-xs py-0">
-                                    <Crown className="h-2.5 w-2.5 mr-1" />
-                                    Card
-                                  </Badge>
-                                )}
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {member.member_type === 'card' && (
+                                    <Badge className="bg-primary/20 text-xs py-0">
+                                      <Crown className="h-2.5 w-2.5 mr-1" />
+                                      Card
+                                    </Badge>
+                                  )}
+                                  {/* Auto-reserve indicator */}
+                                  {member.member_type === 'card' && member.auto_reserve_enabled && member.preferred_workout_type && (
+                                    <Badge variant="outline" className="text-xs py-0" title={`Auto-reserve: ${member.preferred_workout_type}`}>
+                                      {member.preferred_workout_type === 'early' ? (
+                                        <Sunrise className="h-2.5 w-2.5 text-amber-500" />
+                                      ) : (
+                                        <Moon className="h-2.5 w-2.5 text-indigo-500" />
+                                      )}
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
                             <Button
