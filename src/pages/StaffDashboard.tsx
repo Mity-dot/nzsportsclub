@@ -67,6 +67,7 @@ interface Reservation {
   id: string;
   workout_id: string;
   user_id: string;
+  reserved_at?: string;
   profiles?: Profile;
 }
 
@@ -182,11 +183,11 @@ export default function StaffDashboard() {
       .eq('workout_id', workoutId)
       .eq('is_active', true);
     
-    if (reservations) {
+    if (reservations && reservations.length > 0) {
       const userIds = reservations.map(r => r.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
+        .select('id, user_id, full_name, email, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
         .in('user_id', userIds);
       
       const reservationsWithProfiles = reservations.map(r => ({
@@ -195,6 +196,8 @@ export default function StaffDashboard() {
       }));
       
       setWorkoutReservations(reservationsWithProfiles as Reservation[]);
+    } else {
+      setWorkoutReservations([]);
     }
     
     const { data: attendance } = await supabase
@@ -652,11 +655,11 @@ export default function StaffDashboard() {
       .eq('workout_id', workoutId)
       .eq('is_active', true);
     
-    if (reservations) {
+    if (reservations && reservations.length > 0) {
       const userIds = reservations.map(r => r.user_id);
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
+        .select('id, user_id, full_name, email, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
         .in('user_id', userIds);
       
       const reservationsWithProfiles = reservations.map(r => ({
