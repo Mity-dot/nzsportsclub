@@ -784,11 +784,14 @@ export default function StaffDashboard() {
 
   const openEditWorkout = (workout: Workout) => {
     setEditingWorkout(workout);
+    // Use title as the unified value (title_bg should match title)
+    const unifiedTitle = workout.title;
+    const unifiedDescription = workout.description || '';
     setWorkoutForm({
-      title: workout.title,
-      title_bg: workout.title_bg || '',
-      description: workout.description || '',
-      description_bg: workout.description_bg || '',
+      title: unifiedTitle,
+      title_bg: unifiedTitle, // Keep synced
+      description: unifiedDescription,
+      description_bg: unifiedDescription, // Keep synced
       workout_date: workout.workout_date,
       start_time: workout.start_time,
       end_time: workout.end_time,
@@ -863,37 +866,31 @@ export default function StaffDashboard() {
                     </DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>{t('workoutTitle')} (EN)</Label>
-                        <Input
-                          value={workoutForm.title}
-                          onChange={(e) => setWorkoutForm(f => ({ ...f, title: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{t('workoutTitle')} (BG)</Label>
-                        <Input
-                          value={workoutForm.title_bg}
-                          onChange={(e) => setWorkoutForm(f => ({ ...f, title_bg: e.target.value }))}
-                        />
-                      </div>
+                    {/* Unified Title Field */}
+                    <div className="space-y-2">
+                      <Label>{t('workoutTitle')}</Label>
+                      <Input
+                        value={workoutForm.title}
+                        onChange={(e) => setWorkoutForm(f => ({ 
+                          ...f, 
+                          title: e.target.value,
+                          title_bg: e.target.value // Keep both in sync
+                        }))}
+                        placeholder={language === 'bg' ? 'Въведете заглавие' : 'Enter workout title'}
+                      />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>{t('description')} (EN)</Label>
-                        <Textarea
-                          value={workoutForm.description}
-                          onChange={(e) => setWorkoutForm(f => ({ ...f, description: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>{t('description')} (BG)</Label>
-                        <Textarea
-                          value={workoutForm.description_bg}
-                          onChange={(e) => setWorkoutForm(f => ({ ...f, description_bg: e.target.value }))}
-                        />
-                      </div>
+                    {/* Unified Description Field */}
+                    <div className="space-y-2">
+                      <Label>{t('description')}</Label>
+                      <Textarea
+                        value={workoutForm.description}
+                        onChange={(e) => setWorkoutForm(f => ({ 
+                          ...f, 
+                          description: e.target.value,
+                          description_bg: e.target.value // Keep both in sync
+                        }))}
+                        placeholder={language === 'bg' ? 'Въведете описание (по избор)' : 'Enter description (optional)'}
+                      />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -1012,7 +1009,7 @@ export default function StaffDashboard() {
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                       <div className="space-y-1">
                         <h3 className="font-display text-lg font-semibold">
-                          {language === 'bg' && workout.title_bg ? workout.title_bg : workout.title}
+                          {workout.title}
                         </h3>
                         <div className="flex items-center gap-3 text-sm text-muted-foreground">
                           <span className="flex items-center gap-1">
@@ -1400,7 +1397,7 @@ export default function StaffDashboard() {
           <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
             <DialogHeader>
               <DialogTitle className="font-display">
-                {language === 'bg' ? 'Управление на членове' : 'Manage Members'} - {manageMembersWorkout && (language === 'bg' && manageMembersWorkout.title_bg ? manageMembersWorkout.title_bg : manageMembersWorkout?.title)}
+                {language === 'bg' ? 'Управление на членове' : 'Manage Members'} - {manageMembersWorkout?.title}
               </DialogTitle>
             </DialogHeader>
             <div className="py-2 text-sm text-muted-foreground">
