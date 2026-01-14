@@ -78,14 +78,22 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Get workout type (early/late)
     const workoutType = workout.workout_type || 'early';
-    console.log(`Workout type: ${workoutType}`);
+    console.log(`Workout type: ${workoutType}, title: ${workout.title}`);
 
-    // Get all card members who have auto-reserve enabled
-    const { data: cardMembers } = await supabase
+    // Get all card members who have auto-reserve enabled AND have set a preference
+    const { data: cardMembers, error: cardMembersError } = await supabase
       .from("profiles")
-      .select("user_id, preferred_workout_type, auto_reserve_enabled")
+      .select("user_id, preferred_workout_type, auto_reserve_enabled, full_name")
       .eq("member_type", "card")
       .eq("auto_reserve_enabled", true);
+
+    if (cardMembersError) {
+      console.error("Error fetching card members:", cardMembersError);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch card members" }),
+        { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
+      );
+    }
 
     if (!cardMembers || cardMembers.length === 0) {
       console.log("No card members with auto-reserve enabled found");
@@ -102,14 +110,14 @@ const handler = async (req: Request): Promise<Response> => {
     // Members with 'early' preference only get early workouts
     // Members with 'late' preference only get late workouts
     const eligibleCardMembers = cardMembers.filter(m => {
-      // If member has no preference (null), skip them - they need to select a preference
-      if (m.preferred_workout_type === null || m.preferred_workout_type === undefined) {
-        console.log(`Member ${m.user_id}: no preference set, NOT eligible for auto-reserve`);
+      // If member has no preference (null/undefined/empty), skip them
+      if (!m.preferred_workout_type) {
+        console.log(`Member ${m.full_name || m.user_id}: no preference set, skipping`);
         return false;
       }
       // Only exact matches are eligible
       const matches = m.preferred_workout_type === workoutType;
-      console.log(`Member ${m.user_id}: prefers ${m.preferred_workout_type}, workout is ${workoutType}, eligible: ${matches}`);
+      console.log(`Member ${m.full_name || m.user_id}: prefers ${m.preferred_workout_type}, workout is ${workoutType}, eligible: ${matches}`);
       return matches;
     });
 

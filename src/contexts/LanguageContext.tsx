@@ -75,7 +75,7 @@ const translations: Translations = {
   cardPriorityPeriod: { en: 'Card member priority period', bg: 'Период за приоритет на картови членове' },
   
   // Reservations
-  reserve: { en: 'Reserve Spot', bg: 'Запази място' },
+  reserve: { en: 'Reserve Spot', bg: 'Резервирай място' },
   cancelReservation: { en: 'Cancel Reservation', bg: 'Откажи резервация' },
   reserved: { en: 'Reserved', bg: 'Резервирано' },
   spotsFull: { en: 'Spots Full', bg: 'Няма места' },

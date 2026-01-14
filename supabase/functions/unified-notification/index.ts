@@ -27,59 +27,60 @@ function getNotificationContent(
   language: string
 ): { title: string; body: string } {
   const isBg = language === 'bg';
-  const displayTitle = isBg && titleBg ? titleBg : title;
+  // Use unified title (same for all users)
+  const displayTitle = title;
   const formattedDate = date || '';
   const formattedTime = time || '';
 
   switch (type) {
     case "new_workout":
       return {
-        title: isBg ? "🏋️ Нова тренировка!" : "🏋️ New Workout Available!",
+        title: isBg ? "🏋️ Нова тренировка в NZ!" : "🏋️ New Workout at NZ!",
         body: isBg 
           ? `"${displayTitle}" е добавена за ${formattedDate} в ${formattedTime}. Резервирайте сега!`
-          : `"${displayTitle}" has been scheduled for ${formattedDate} at ${formattedTime}. Reserve your spot now!`,
+          : `"${displayTitle}" scheduled for ${formattedDate} at ${formattedTime}. Reserve now!`,
       };
     case "auto_reserved":
       return {
-        title: isBg ? "🎫 Автоматична резервация!" : "🎫 Auto-Reserved!",
+        title: isBg ? "🎫 NZ Авто-резервация!" : "🎫 NZ Auto-Reserved!",
         body: isBg 
-          ? `Мястото ви за "${displayTitle}" на ${formattedDate} в ${formattedTime} е резервирано автоматично.`
-          : `Your spot for "${displayTitle}" on ${formattedDate} at ${formattedTime} has been automatically reserved.`,
+          ? `Мястото ви за "${displayTitle}" на ${formattedDate} в ${formattedTime} е резервирано.`
+          : `Your spot for "${displayTitle}" on ${formattedDate} at ${formattedTime} is reserved.`,
       };
     case "workout_updated":
       return {
-        title: isBg ? "📝 Тренировка актуализирана" : "📝 Workout Updated",
+        title: isBg ? "📝 NZ Тренировка актуализирана" : "📝 NZ Workout Updated",
         body: isBg 
-          ? `Детайлите за "${displayTitle}" бяха променени. Проверете новата информация.`
-          : `Details for "${displayTitle}" have been changed. Check the updated information.`,
+          ? `Детайлите за "${displayTitle}" бяха променени.`
+          : `Details for "${displayTitle}" have been changed.`,
       };
     case "workout_deleted":
       return {
-        title: isBg ? "❌ Тренировка отменена" : "❌ Workout Cancelled",
+        title: isBg ? "❌ NZ Тренировка отменена" : "❌ NZ Workout Cancelled",
         body: isBg 
-          ? `"${displayTitle}" беше отменена. Резервацията ви е анулирана автоматично.`
-          : `"${displayTitle}" has been cancelled. Your reservation has been automatically removed.`,
+          ? `"${displayTitle}" беше отменена.`
+          : `"${displayTitle}" has been cancelled.`,
       };
     case "spot_freed":
       return {
-        title: isBg ? "🎉 Освободено място!" : "🎉 Spot Available!",
+        title: isBg ? "🎉 NZ Освободено място!" : "🎉 NZ Spot Available!",
         body: isBg 
-          ? `Свободно място за "${displayTitle}"! Бързайте да резервирате.`
-          : `A spot just opened up for "${displayTitle}"! Hurry and reserve it now.`,
+          ? `Свободно място за "${displayTitle}"! Резервирайте бързо.`
+          : `A spot opened for "${displayTitle}"! Reserve now.`,
       };
     case "workout_full":
       return {
-        title: isBg ? "📋 Тренировката е пълна" : "📋 Workout Fully Booked",
+        title: isBg ? "📋 NZ Тренировката е пълна" : "📋 NZ Workout Full",
         body: isBg 
-          ? `"${displayTitle}" вече е напълно заета. Всички места са резервирани.`
-          : `"${displayTitle}" is now fully booked. All spots have been reserved.`,
+          ? `"${displayTitle}" е напълно заета.`
+          : `"${displayTitle}" is fully booked.`,
       };
     case "waiting_list_promoted":
       return {
-        title: isBg ? "🎉 Мястото ви е потвърдено!" : "🎉 Your Spot is Confirmed!",
+        title: isBg ? "🎉 NZ Мястото ви е потвърдено!" : "🎉 NZ Spot Confirmed!",
         body: isBg 
-          ? `Освободи се място за "${displayTitle}" и вие бяхте резервирани от списъка за изчакване!`
-          : `A spot opened up for "${displayTitle}" and you've been moved from the waiting list!`,
+          ? `Освободи се място за "${displayTitle}" и вие сте записани!`
+          : `A spot opened for "${displayTitle}" and you're in!`,
       };
     default:
       return {

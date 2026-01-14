@@ -558,12 +558,15 @@ export default function Dashboard() {
     navigate('/');
   };
 
+  // Unified title - show the same title to all users
   const getWorkoutTitle = (workout: Workout) => {
-    return language === 'bg' && workout.title_bg ? workout.title_bg : workout.title;
+    // Title should be the same in both languages now (unified), but fallback to title_bg if different
+    return workout.title;
   };
 
+  // Unified description - show the same description to all users
   const getWorkoutDescription = (workout: Workout) => {
-    return language === 'bg' && workout.description_bg ? workout.description_bg : workout.description;
+    return workout.description;
   };
 
   // Bulgarian translations for days and months
@@ -729,11 +732,11 @@ export default function Dashboard() {
                 <p className="text-xs text-muted-foreground">
                   {preferredWorkoutType 
                     ? (language === 'bg' 
-                        ? `Авто-резервация само за ${preferredWorkoutType === 'early' ? 'сутрешни' : 'вечерни'} тренировки` 
+                        ? `Авто-резервация само за ${preferredWorkoutType === 'early' ? 'ранни' : 'късни'} тренировки` 
                         : `Auto-reserve only for ${preferredWorkoutType} workouts`)
                     : (language === 'bg' 
-                        ? 'Авто-резервация за всички типове тренировки' 
-                        : 'Auto-reserve for all workout types')
+                        ? 'Изберете тип тренировка за авто-резервация' 
+                        : 'Select a workout type for auto-reserve')
                   }
                 </p>
               </div>
