@@ -1,6 +1,9 @@
 // Firebase Cloud Messaging Service Worker
-importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.7.0/firebase-messaging-compat.js');
+// Updated to Firebase v11.x (latest stable)
+importScripts('https://www.gstatic.com/firebasejs/11.0.2/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/11.0.2/firebase-messaging-compat.js');
+
+const CACHE_VERSION = 'fcm-sw-v2';
 
 const firebaseConfig = {
   apiKey: "AIzaSyB77lAHEx-XN7ZPYjwRmikCTYi_BEzS9dk",
@@ -16,30 +19,38 @@ firebase.initializeApp(firebaseConfig);
 
 const messaging = firebase.messaging();
 
-// Handle background messages
+// Handle background messages with proper payload parsing
 messaging.onBackgroundMessage((payload) => {
   console.log('[FCM SW] Background message received:', payload);
 
-  const notificationTitle = payload.notification?.title || 'NZ Sport Club';
+  // Handle both notification and data messages
+  const notificationTitle = payload.notification?.title || payload.data?.title || 'NZ Sport Club';
+  const notificationBody = payload.notification?.body || payload.data?.body || 'You have a new notification';
+  
   const notificationOptions = {
-    body: payload.notification?.body || 'You have a new notification',
-    icon: '/favicon.ico',
+    body: notificationBody,
+    icon: payload.notification?.icon || '/favicon.ico',
     badge: '/favicon.ico',
-    tag: payload.data?.type || 'default',
-    data: payload.data || {},
+    tag: payload.data?.type || 'nz-notification',
+    data: {
+      ...payload.data,
+      FCM_MSG: payload, // Store original payload for click handling
+    },
     vibrate: [200, 100, 200],
     requireInteraction: true,
     renotify: true,
     actions: [
       { action: 'open', title: '🔍 View Details' },
       { action: 'dismiss', title: '✕ Dismiss' }
-    ]
+    ],
+    // Silent flag for data-only messages
+    silent: !payload.notification,
   };
 
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  return self.registration.showNotification(notificationTitle, notificationOptions);
 });
 
-// Handle notification click
+// Handle notification click with proper navigation
 self.addEventListener('notificationclick', (event) => {
   console.log('[FCM SW] Notification clicked:', event.action);
   event.notification.close();
@@ -48,8 +59,9 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  const workoutId = event.notification.data?.workoutId;
-  const notificationType = event.notification.data?.type;
+  const data = event.notification.data || {};
+  const workoutId = data.workoutId;
+  const notificationType = data.type;
   
   let urlToOpen = '/dashboard';
   if (workoutId && notificationType !== 'workout_deleted') {
@@ -59,8 +71,9 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
+        // Try to focus existing window
         for (const client of clientList) {
-          if ('focus' in client) {
+          if (client.url.includes(self.location.origin) && 'focus' in client) {
             client.postMessage({
               type: 'NOTIFICATION_CLICK',
               workoutId: workoutId,
@@ -69,6 +82,7 @@ self.addEventListener('notificationclick', (event) => {
             return client.focus();
           }
         }
+        // Open new window if none exists
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }
@@ -78,4 +92,17 @@ self.addEventListener('notificationclick', (event) => {
 
 self.addEventListener('notificationclose', (event) => {
   console.log('[FCM SW] Notification closed');
+});
+
+// Clean up old caches on activation
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name.startsWith('fcm-sw-') && name !== CACHE_VERSION)
+          .map((name) => caches.delete(name))
+      );
+    })
+  );
 });

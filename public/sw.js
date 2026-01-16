@@ -1,53 +1,64 @@
-// Service Worker for Push Notifications - NZ Sport Club
-// Version: 2.0.0 - Force cache refresh
+// NZ Sport Club Service Worker
+// Handles Web Push (VAPID) notifications and caching
 
+const CACHE_VERSION = 'v2.1.0';
+const CACHE_NAME = `nz-sport-club-${CACHE_VERSION}`;
 const APP_NAME = 'NZ Sport Club';
-const CACHE_VERSION = 'v2.0.0';
-const CACHE_NAME = `nz-sport-${CACHE_VERSION}`;
 
+// Files to cache for offline use
+const STATIC_ASSETS = [
+  '/',
+  '/favicon.ico',
+];
+
+// Install event - cache static assets and force activation
 self.addEventListener('install', (event) => {
-  console.log('[SW] Service Worker installed - version', CACHE_VERSION);
-  // Force immediate activation without waiting for existing clients
-  self.skipWaiting();
+  console.log(`[SW] Installing ${CACHE_VERSION}`);
+  
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => {
+        console.log('[SW] Caching static assets');
+        return cache.addAll(STATIC_ASSETS);
+      })
+      .then(() => {
+        // Force immediate activation (skip waiting)
+        return self.skipWaiting();
+      })
+  );
 });
 
+// Activate event - clean old caches and claim clients immediately
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Service Worker activated - version', CACHE_VERSION);
+  console.log(`[SW] Activating ${CACHE_VERSION}`);
   
-  // Clear all old caches and take control immediately
   event.waitUntil(
     Promise.all([
       // Delete all old caches
       caches.keys().then((cacheNames) => {
         return Promise.all(
-          cacheNames.map((cacheName) => {
-            if (cacheName !== CACHE_NAME) {
-              console.log('[SW] Deleting old cache:', cacheName);
-              return caches.delete(cacheName);
-            }
-          })
+          cacheNames
+            .filter((name) => name.startsWith('nz-sport-club-') && name !== CACHE_NAME)
+            .map((name) => {
+              console.log(`[SW] Deleting old cache: ${name}`);
+              return caches.delete(name);
+            })
         );
       }),
       // Take control of all clients immediately
-      clients.claim()
-    ])
+      self.clients.claim()
+    ]).then(() => {
+      // Notify all clients about the update
+      return self.clients.matchAll({ type: 'window' }).then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION });
+        });
+      });
+    })
   );
 });
 
-// Intercept fetch requests to ensure fresh content
-self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
-  
-  // For HTML pages, always go to network first
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
-    );
-    return;
-  }
-});
-
+// Push notification handler (Web Push / VAPID)
 self.addEventListener('push', (event) => {
   console.log('[SW] Push notification received');
   
@@ -99,6 +110,7 @@ self.addEventListener('push', (event) => {
   );
 });
 
+// Notification click handler
 self.addEventListener('notificationclick', (event) => {
   console.log('[SW] Notification clicked:', event.action);
   event.notification.close();
@@ -118,8 +130,9 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
+        // Focus existing window if available
         for (const client of clientList) {
-          if ('focus' in client) {
+          if (client.url.includes(self.location.origin) && 'focus' in client) {
             client.postMessage({
               type: 'NOTIFICATION_CLICK',
               workoutId: workoutId,
@@ -128,6 +141,7 @@ self.addEventListener('notificationclick', (event) => {
             return client.focus();
           }
         }
+        // Open new window
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }
@@ -139,12 +153,46 @@ self.addEventListener('notificationclose', (event) => {
   console.log('[SW] Notification closed');
 });
 
-// Listen for messages from the main app to force update
+// Fetch handler with network-first strategy for API, cache-first for assets
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  
+  // Skip caching for API requests and external resources
+  if (url.pathname.startsWith('/api') || 
+      url.pathname.includes('supabase') ||
+      url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Cache-first for static assets
+  if (event.request.destination === 'image' || 
+      event.request.destination === 'style' ||
+      event.request.destination === 'font') {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        return cached || fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, clone);
+            });
+          }
+          return response;
+        });
+      })
+    );
+  }
+});
+
+// Handle messages from main app
 self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') {
+  console.log('[SW] Message received:', event.data);
+  
+  if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
-  if (event.data === 'GET_VERSION') {
+  
+  if (event.data?.type === 'GET_VERSION') {
     event.ports[0].postMessage({ version: CACHE_VERSION });
   }
 });
