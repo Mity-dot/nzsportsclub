@@ -99,6 +99,7 @@ export default function StaffDashboard() {
   const [uploadingCardImage, setUploadingCardImage] = useState(false);
   const [manageMembersWorkout, setManageMembersWorkout] = useState<Workout | null>(null);
   const [manageMembersReservations, setManageMembersReservations] = useState<Reservation[]>([]);
+  const [manageMembersWaitingList, setManageMembersWaitingList] = useState<{ id: string; user_id: string; position: number; profiles?: Profile }[]>([]);
   const [autoReserving, setAutoReserving] = useState(false);
   
   // Workout form
@@ -649,6 +650,7 @@ export default function StaffDashboard() {
   };
 
   const fetchManageMembersReservations = async (workoutId: string) => {
+    // Fetch reservations
     const { data: reservations } = await supabase
       .from('reservations')
       .select('*')
@@ -670,6 +672,31 @@ export default function StaffDashboard() {
       setManageMembersReservations(reservationsWithProfiles as Reservation[]);
     } else {
       setManageMembersReservations([]);
+    }
+    
+    // Fetch waiting list
+    const { data: waitingList } = await supabase
+      .from('waiting_list')
+      .select('*')
+      .eq('workout_id', workoutId)
+      .eq('is_active', true)
+      .order('position');
+    
+    if (waitingList && waitingList.length > 0) {
+      const waitingUserIds = waitingList.map(w => w.user_id);
+      const { data: waitingProfiles } = await supabase
+        .from('profiles')
+        .select('id, user_id, full_name, email, member_type, card_image_url')
+        .in('user_id', waitingUserIds);
+      
+      const waitingWithProfiles = waitingList.map(w => ({
+        ...w,
+        profiles: waitingProfiles?.find(p => p.user_id === w.user_id),
+      }));
+      
+      setManageMembersWaitingList(waitingWithProfiles);
+    } else {
+      setManageMembersWaitingList([]);
     }
   };
 
@@ -1465,6 +1492,70 @@ export default function StaffDashboard() {
                 </ScrollArea>
               </div>
 
+              {/* Waiting List Section */}
+              {manageMembersWaitingList.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="overflow-hidden">
+                    <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-amber-500" />
+                      {language === 'bg' ? 'Лист за чакане' : 'Waiting List'}
+                      <Badge variant="secondary" className="text-xs">{manageMembersWaitingList.length}</Badge>
+                    </h4>
+                    <ScrollArea className="h-[150px] pr-3">
+                      <div className="space-y-2">
+                        {manageMembersWaitingList.map((entry) => (
+                          <div key={entry.id} className="flex items-center justify-between p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 w-6 rounded-full bg-amber-500/20 flex items-center justify-center text-xs font-medium text-amber-600">
+                                {entry.position}
+                              </div>
+                              {entry.profiles?.card_image_url && (
+                                <img
+                                  src={entry.profiles.card_image_url}
+                                  alt=""
+                                  className="h-8 w-8 rounded object-cover"
+                                />
+                              )}
+                              <div>
+                                <p className="text-sm font-medium">{entry.profiles?.full_name || 'Member'}</p>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  {entry.profiles?.member_type === 'card' && (
+                                    <Badge className="bg-primary/20 text-xs py-0">
+                                      <Crown className="h-2.5 w-2.5 mr-1" />
+                                      Card
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (manageMembersWorkout) {
+                                  handleAddMemberToWorkout(manageMembersWorkout.id, entry.user_id);
+                                  // Also remove from waiting list
+                                  supabase
+                                    .from('waiting_list')
+                                    .update({ is_active: false })
+                                    .eq('id', entry.id)
+                                    .then(() => fetchManageMembersReservations(manageMembersWorkout.id));
+                                }
+                              }}
+                              className="text-primary hover:text-primary"
+                              title={language === 'bg' ? 'Добави в тренировката' : 'Add to workout'}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                </>
+              )}
+
               <Separator />
 
               {/* Available members to add */}
@@ -1473,9 +1564,10 @@ export default function StaffDashboard() {
                 <ScrollArea className="h-[200px] pr-3">
                   {(() => {
                     const enrolledUserIds = new Set(manageMembersReservations.map(r => r.user_id));
+                    const waitingUserIds = new Set(manageMembersWaitingList.map(w => w.user_id));
                     const availableMembers = members.filter(m => {
                       const status = getMemberStatus(m);
-                      return (status === 'member' || status === 'card') && !enrolledUserIds.has(m.user_id);
+                      return (status === 'member' || status === 'card') && !enrolledUserIds.has(m.user_id) && !waitingUserIds.has(m.user_id);
                     });
 
                     if (availableMembers.length === 0) {

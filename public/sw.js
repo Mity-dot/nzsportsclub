@@ -1,15 +1,51 @@
 // Service Worker for Push Notifications - NZ Sport Club
+// Version: 2.0.0 - Force cache refresh
 
 const APP_NAME = 'NZ Sport Club';
+const CACHE_VERSION = 'v2.0.0';
+const CACHE_NAME = `nz-sport-${CACHE_VERSION}`;
 
 self.addEventListener('install', (event) => {
-  console.log('[SW] Service Worker installed');
+  console.log('[SW] Service Worker installed - version', CACHE_VERSION);
+  // Force immediate activation without waiting for existing clients
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Service Worker activated');
-  event.waitUntil(clients.claim());
+  console.log('[SW] Service Worker activated - version', CACHE_VERSION);
+  
+  // Clear all old caches and take control immediately
+  event.waitUntil(
+    Promise.all([
+      // Delete all old caches
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames.map((cacheName) => {
+            if (cacheName !== CACHE_NAME) {
+              console.log('[SW] Deleting old cache:', cacheName);
+              return caches.delete(cacheName);
+            }
+          })
+        );
+      }),
+      // Take control of all clients immediately
+      clients.claim()
+    ])
+  );
+});
+
+// Intercept fetch requests to ensure fresh content
+self.addEventListener('fetch', (event) => {
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') return;
+  
+  // For HTML pages, always go to network first
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+    return;
+  }
 });
 
 self.addEventListener('push', (event) => {
@@ -50,8 +86,8 @@ self.addEventListener('push', (event) => {
     tag: data.tag,
     data: data.data,
     vibrate: [200, 100, 200],
-    requireInteraction: true, // Keep notification visible until user interacts
-    renotify: true, // Notify even if same tag
+    requireInteraction: true,
+    renotify: true,
     actions: [
       { action: 'open', title: '🔍 View Details' },
       { action: 'dismiss', title: '✕ Dismiss' }
@@ -71,7 +107,6 @@ self.addEventListener('notificationclick', (event) => {
     return;
   }
 
-  // Default action or 'open' action - open the dashboard
   const workoutId = event.notification.data?.workoutId;
   const notificationType = event.notification.data?.type;
   
@@ -83,7 +118,6 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true })
       .then((clientList) => {
-        // Check if there's already a window open
         for (const client of clientList) {
           if ('focus' in client) {
             client.postMessage({
@@ -94,7 +128,6 @@ self.addEventListener('notificationclick', (event) => {
             return client.focus();
           }
         }
-        // No window open, open a new one
         if (clients.openWindow) {
           return clients.openWindow(urlToOpen);
         }
@@ -102,7 +135,16 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// Handle notification close
 self.addEventListener('notificationclose', (event) => {
   console.log('[SW] Notification closed');
+});
+
+// Listen for messages from the main app to force update
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+  if (event.data === 'GET_VERSION') {
+    event.ports[0].postMessage({ version: CACHE_VERSION });
+  }
 });
