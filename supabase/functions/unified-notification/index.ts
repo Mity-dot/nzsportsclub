@@ -18,6 +18,13 @@ interface NotificationRequest {
   excludeUserIds?: string[];
 }
 
+interface PushResult {
+  channel: string;
+  sent: number;
+  failed: number;
+  errors: string[];
+}
+
 function getNotificationContent(
   type: string,
   title: string,
@@ -27,7 +34,6 @@ function getNotificationContent(
   language: string
 ): { title: string; body: string } {
   const isBg = language === 'bg';
-  // Use unified title (same for all users)
   const displayTitle = title;
   const formattedDate = date || '';
   const formattedTime = time || '';
@@ -121,11 +127,9 @@ const handler = async (req: Request): Promise<Response> => {
     let userIdsToNotify: string[] = [];
 
     if (targetUserIds && targetUserIds.length > 0) {
-      // Specific users targeted (e.g., auto-reserved members)
       userIdsToNotify = targetUserIds;
       console.log(`Targeting ${targetUserIds.length} specific users`);
     } else {
-      // Get all members (non-staff users)
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, member_type, preferred_language");
@@ -138,15 +142,11 @@ const handler = async (req: Request): Promise<Response> => {
 
       const staffUserIds = new Set(staffRoles?.map(r => r.user_id) || []);
 
-      // For most notification types, notify all non-staff members
       if (type === "new_workout" || type === "workout_updated" || type === "spot_freed") {
         userIdsToNotify = profiles?.filter(p => !staffUserIds.has(p.user_id)).map(p => p.user_id) || [];
       } else if (type === "workout_deleted") {
-        // Notify all members who had reservations (they'll be in excludeUserIds from reservations)
-        // For simplicity, notify all members
         userIdsToNotify = profiles?.filter(p => !staffUserIds.has(p.user_id)).map(p => p.user_id) || [];
       } else if (type === "workout_full") {
-        // Only notify staff when workout is full
         userIdsToNotify = Array.from(staffUserIds);
       }
     }
@@ -177,7 +177,7 @@ const handler = async (req: Request): Promise<Response> => {
       userLanguages.set(p.user_id, p.preferred_language || 'en');
     });
 
-    // Insert notification_queue entries (in-app notifications) - only once, not per channel
+    // Insert notification_queue entries (in-app notifications)
     const notificationRecords = userIdsToNotify.map(userId => {
       const contentEn = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'en');
       const contentBg = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'bg');
@@ -203,33 +203,36 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // Now send push notifications via each channel (without inserting to notification_queue again)
+    // Send push notifications via each channel with retry logic
     const pushResults = await Promise.allSettled([
-      sendViaWebPush(supabase, userIdsToNotify, userLanguages, body),
-      sendViaFCM(supabase, userIdsToNotify, userLanguages, body),
-      sendViaOneSignal(userIdsToNotify, body),
+      sendViaWebPushWithRetry(supabase, userIdsToNotify, userLanguages, body),
+      sendViaFCMv1(supabase, userIdsToNotify, userLanguages, body),
+      sendViaOneSignalV2(userIdsToNotify, userLanguages, body),
     ]);
 
-    const successCounts = pushResults.map((r, i) => {
+    const results: PushResult[] = [
+      { channel: 'webPush', sent: 0, failed: 0, errors: [] },
+      { channel: 'fcm', sent: 0, failed: 0, errors: [] },
+      { channel: 'oneSignal', sent: 0, failed: 0, errors: [] },
+    ];
+
+    pushResults.forEach((r, i) => {
       if (r.status === 'fulfilled') {
-        return r.value;
+        results[i] = r.value;
+      } else {
+        results[i].errors.push(String(r.reason));
+        console.error(`Push channel ${results[i].channel} failed:`, r.reason);
       }
-      console.error(`Push channel ${i} failed:`, r.reason);
-      return 0;
     });
 
-    const totalSent = successCounts.reduce((a, b) => a + b, 0);
+    const totalSent = results.reduce((a, b) => a + b.sent, 0);
 
     return new Response(
       JSON.stringify({ 
         message: "Notifications sent", 
         notified: userIdsToNotify.length,
         pushSent: totalSent,
-        channels: {
-          webPush: successCounts[0],
-          fcm: successCounts[1],
-          oneSignal: successCounts[2],
-        }
+        channels: results.reduce((acc, r) => ({ ...acc, [r.channel]: { sent: r.sent, failed: r.failed } }), {}),
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
@@ -243,26 +246,28 @@ const handler = async (req: Request): Promise<Response> => {
   }
 };
 
-// Send via Web Push (VAPID)
-async function sendViaWebPush(
+// Web Push with retry logic (RFC 8030 compliant)
+async function sendViaWebPushWithRetry(
   supabase: ReturnType<typeof createClient>,
   userIds: string[],
   userLanguages: Map<string, string>,
-  body: NotificationRequest
-): Promise<number> {
+  body: NotificationRequest,
+  maxRetries = 2
+): Promise<PushResult> {
+  const result: PushResult = { channel: 'webPush', sent: 0, failed: 0, errors: [] };
+  
   try {
     const vapidPrivateKey = Deno.env.get("VAPID_PRIVATE_KEY");
     const vapidPublicKey = Deno.env.get("VAPID_PUBLIC_KEY");
     
     if (!vapidPrivateKey || !vapidPublicKey) {
       console.log("VAPID keys not configured, skipping web push");
-      return 0;
+      return result;
     }
 
-    // Import the push builder
     const { buildPushHTTPRequest } = await import("https://esm.sh/@pushforge/builder@1.1.2?target=denonext");
 
-    // Get web push subscriptions (not FCM or native)
+    // Get web push subscriptions (exclude FCM tokens)
     const { data: subscriptions } = await supabase
       .from("push_subscriptions")
       .select("*")
@@ -272,11 +277,11 @@ async function sendViaWebPush(
 
     if (!subscriptions || subscriptions.length === 0) {
       console.log("No web push subscriptions found");
-      return 0;
+      return result;
     }
 
     const privateJWK = buildVapidPrivateJwk(vapidPrivateKey.trim(), vapidPublicKey);
-    let successCount = 0;
+    const expiredSubscriptions: string[] = [];
 
     for (const sub of subscriptions) {
       if (!sub.endpoint?.startsWith("https://")) continue;
@@ -287,59 +292,101 @@ async function sendViaWebPush(
         body.workoutDate, body.workoutTime, userLang
       );
 
-      try {
-        const { endpoint, headers, body: pushBody } = await buildPushHTTPRequest({
-          privateJWK,
-          message: {
-            payload: {
-              title: content.title,
-              body: content.body,
-              icon: "/favicon.ico",
-              badge: "/favicon.ico",
-              data: { workoutId: body.workoutId, type: body.type },
-            },
-            options: { ttl: 60 * 60 * 24, urgency: "high" },
-            adminContact: "mailto:nz@sportclub.com",
-          },
-          subscription: {
-            endpoint: sub.endpoint,
-            keys: { p256dh: sub.p256dh, auth: sub.auth },
-          },
-        });
+      let success = false;
+      let lastError = '';
 
-        const resp = await fetch(endpoint, { method: "POST", headers, body: pushBody });
-        if (resp.status === 201) successCount++;
-      } catch (e) {
-        console.error("Web push failed for subscription:", e);
+      for (let attempt = 0; attempt <= maxRetries && !success; attempt++) {
+        try {
+          const { endpoint, headers, body: pushBody } = await buildPushHTTPRequest({
+            privateJWK,
+            message: {
+              payload: {
+                title: content.title,
+                body: content.body,
+                icon: "/favicon.ico",
+                badge: "/favicon.ico",
+                data: { workoutId: body.workoutId, type: body.type },
+              },
+              options: { 
+                ttl: 60 * 60 * 24, // 24 hours
+                urgency: "high",
+              },
+              adminContact: "mailto:nz@sportclub.com",
+            },
+            subscription: {
+              endpoint: sub.endpoint,
+              keys: { p256dh: sub.p256dh, auth: sub.auth },
+            },
+          });
+
+          const resp = await fetch(endpoint, { method: "POST", headers, body: pushBody });
+          
+          if (resp.status === 201) {
+            success = true;
+            result.sent++;
+          } else if (resp.status === 410 || resp.status === 404) {
+            // Subscription expired - mark for deletion
+            expiredSubscriptions.push(sub.id);
+            lastError = `Subscription expired (${resp.status})`;
+            break;
+          } else if (resp.status === 429) {
+            // Rate limited - wait and retry
+            const retryAfter = parseInt(resp.headers.get('Retry-After') || '5');
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
+            lastError = 'Rate limited';
+          } else {
+            lastError = `HTTP ${resp.status}`;
+          }
+        } catch (e) {
+          lastError = String(e);
+          // Exponential backoff for network errors
+          if (attempt < maxRetries) {
+            await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 1000));
+          }
+        }
+      }
+
+      if (!success) {
+        result.failed++;
+        if (lastError) result.errors.push(lastError);
       }
     }
 
-    console.log(`Web Push: sent ${successCount}/${subscriptions.length}`);
-    return successCount;
+    // Clean up expired subscriptions
+    if (expiredSubscriptions.length > 0) {
+      console.log(`🗑️ Removing ${expiredSubscriptions.length} expired web push subscriptions`);
+      await supabase.from("push_subscriptions").delete().in("id", expiredSubscriptions);
+    }
+
+    console.log(`Web Push: sent ${result.sent}/${subscriptions.length}`);
+    return result;
   } catch (e) {
     console.error("Web push error:", e);
-    return 0;
+    result.errors.push(String(e));
+    return result;
   }
 }
 
-// Send via FCM
-async function sendViaFCM(
+// FCM HTTP v1 API (current standard, replaces legacy API)
+async function sendViaFCMv1(
   supabase: ReturnType<typeof createClient>,
   userIds: string[],
   userLanguages: Map<string, string>,
   body: NotificationRequest
-): Promise<number> {
+): Promise<PushResult> {
+  const result: PushResult = { channel: 'fcm', sent: 0, failed: 0, errors: [] };
+  
   try {
     const serviceAccountJson = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
     if (!serviceAccountJson) {
       console.log("FCM not configured, skipping");
-      return 0;
+      return result;
     }
 
     const credentials = JSON.parse(serviceAccountJson);
-    const accessToken = await getAccessToken(credentials);
+    const accessToken = await getOAuth2AccessToken(credentials);
 
-    // Get FCM subscriptions
+    // Get FCM subscriptions (both web and native)
     const { data: subscriptions } = await supabase
       .from("push_subscriptions")
       .select("*")
@@ -348,10 +395,10 @@ async function sendViaFCM(
 
     if (!subscriptions || subscriptions.length === 0) {
       console.log("No FCM subscriptions found");
-      return 0;
+      return result;
     }
 
-    let successCount = 0;
+    const invalidTokens: string[] = [];
 
     for (const sub of subscriptions) {
       const isNative = sub.endpoint.startsWith("native://fcm/");
@@ -365,38 +412,183 @@ async function sendViaFCM(
         body.workoutDate, body.workoutTime, userLang
       );
 
-      const success = await sendFCMNotification(
-        accessToken, credentials.project_id, fcmToken,
-        content, { workoutId: body.workoutId, type: body.type }, isNative
-      );
-      if (success) successCount++;
+      try {
+        // FCM HTTP v1 API format
+        const fcmPayload = {
+          message: {
+            token: fcmToken,
+            notification: {
+              title: content.title,
+              body: content.body,
+            },
+            data: {
+              workoutId: body.workoutId || '',
+              type: body.type,
+              click_action: "FLUTTER_NOTIFICATION_CLICK",
+            },
+            android: {
+              priority: "high",
+              notification: {
+                channel_id: "nz_workouts",
+                icon: "ic_notification",
+                color: "#4F46E5",
+              },
+            },
+            apns: {
+              headers: {
+                "apns-priority": "10",
+                "apns-push-type": "alert",
+              },
+              payload: {
+                aps: {
+                  alert: {
+                    title: content.title,
+                    body: content.body,
+                  },
+                  sound: "default",
+                  badge: 1,
+                },
+              },
+            },
+            webpush: {
+              headers: {
+                Urgency: "high",
+                TTL: "86400",
+              },
+              notification: {
+                title: content.title,
+                body: content.body,
+                icon: "/favicon.ico",
+                badge: "/favicon.ico",
+                requireInteraction: true,
+              },
+            },
+          },
+        };
+
+        const response = await fetch(
+          `https://fcm.googleapis.com/v1/projects/${credentials.project_id}/messages:send`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify(fcmPayload),
+          }
+        );
+
+        if (response.ok) {
+          result.sent++;
+        } else {
+          const errorData = await response.json().catch(() => ({}));
+          const errorCode = errorData?.error?.details?.[0]?.errorCode || errorData?.error?.code;
+          
+          // Handle invalid/expired tokens
+          if (errorCode === "UNREGISTERED" || errorCode === "INVALID_ARGUMENT") {
+            invalidTokens.push(sub.id);
+          }
+          
+          result.failed++;
+          result.errors.push(`FCM error: ${errorCode || response.status}`);
+        }
+      } catch (e) {
+        result.failed++;
+        result.errors.push(String(e));
+      }
     }
 
-    console.log(`FCM: sent ${successCount}/${subscriptions.length}`);
-    return successCount;
+    // Clean up invalid tokens
+    if (invalidTokens.length > 0) {
+      console.log(`🗑️ Removing ${invalidTokens.length} invalid FCM tokens`);
+      await supabase.from("push_subscriptions").delete().in("id", invalidTokens);
+    }
+
+    console.log(`FCM: sent ${result.sent}/${subscriptions.length}`);
+    return result;
   } catch (e) {
     console.error("FCM error:", e);
-    return 0;
+    result.errors.push(String(e));
+    return result;
   }
 }
 
-// Send via OneSignal
-async function sendViaOneSignal(userIds: string[], body: NotificationRequest): Promise<number> {
+// OneSignal API v2 (User Model - current standard)
+async function sendViaOneSignalV2(
+  userIds: string[],
+  userLanguages: Map<string, string>,
+  body: NotificationRequest
+): Promise<PushResult> {
+  const result: PushResult = { channel: 'oneSignal', sent: 0, failed: 0, errors: [] };
+  
   try {
     const appId = Deno.env.get("ONESIGNAL_APP_ID");
     const apiKey = Deno.env.get("ONESIGNAL_REST_API_KEY");
     
     if (!appId || !apiKey) {
       console.log("OneSignal not configured, skipping");
-      return 0;
+      return result;
     }
 
-    const content = getNotificationContent(
+    // Group users by language for localized notifications
+    const enUsers: string[] = [];
+    const bgUsers: string[] = [];
+    
+    userIds.forEach(id => {
+      const lang = userLanguages.get(id) || 'en';
+      if (lang === 'bg') {
+        bgUsers.push(id);
+      } else {
+        enUsers.push(id);
+      }
+    });
+
+    const contentEn = getNotificationContent(
       body.type, body.workoutTitle, body.workoutTitleBg,
       body.workoutDate, body.workoutTime, 'en'
     );
+    
+    const contentBg = getNotificationContent(
+      body.type, body.workoutTitle, body.workoutTitleBg,
+      body.workoutDate, body.workoutTime, 'bg'
+    );
 
-    const response = await fetch("https://onesignal.com/api/v1/notifications", {
+    // Send to English users
+    if (enUsers.length > 0) {
+      const enResult = await sendOneSignalBatch(appId, apiKey, enUsers, contentEn, body);
+      result.sent += enResult.sent;
+      result.failed += enResult.failed;
+      if (enResult.error) result.errors.push(enResult.error);
+    }
+
+    // Send to Bulgarian users
+    if (bgUsers.length > 0) {
+      const bgResult = await sendOneSignalBatch(appId, apiKey, bgUsers, contentBg, body);
+      result.sent += bgResult.sent;
+      result.failed += bgResult.failed;
+      if (bgResult.error) result.errors.push(bgResult.error);
+    }
+
+    console.log(`OneSignal: sent ${result.sent}/${userIds.length}`);
+    return result;
+  } catch (e) {
+    console.error("OneSignal error:", e);
+    result.errors.push(String(e));
+    return result;
+  }
+}
+
+async function sendOneSignalBatch(
+  appId: string,
+  apiKey: string,
+  userIds: string[],
+  content: { title: string; body: string },
+  body: NotificationRequest
+): Promise<{ sent: number; failed: number; error?: string }> {
+  try {
+    // OneSignal API - using include_aliases (v2 User Model)
+    // This replaces deprecated include_external_user_ids
+    const response = await fetch("https://api.onesignal.com/notifications", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -404,24 +596,54 @@ async function sendViaOneSignal(userIds: string[], body: NotificationRequest): P
       },
       body: JSON.stringify({
         app_id: appId,
-        include_external_user_ids: userIds,
+        // Use include_aliases with external_id (new User Model API)
+        include_aliases: {
+          external_id: userIds,
+        },
+        target_channel: "push",
         headings: { en: content.title },
         contents: { en: content.body },
-        data: { type: body.type, workoutId: body.workoutId },
+        data: { 
+          type: body.type, 
+          workoutId: body.workoutId,
+        },
+        // iOS specific
+        ios_badgeType: "Increase",
+        ios_badgeCount: 1,
+        ios_sound: "default",
+        // Android specific
+        android_channel_id: "nz_workouts",
+        priority: 10,
+        // Web specific
+        web_push_topic: body.type,
+        chrome_web_icon: "/favicon.ico",
+        chrome_web_badge: "/favicon.ico",
+        // TTL
+        ttl: 86400,
       }),
     });
 
-    const result = await response.json();
-    console.log("OneSignal response:", result);
+    const responseData = await response.json();
     
-    return result.recipients || 0;
+    if (response.ok) {
+      return { 
+        sent: responseData.recipients || userIds.length, 
+        failed: 0 
+      };
+    } else {
+      console.error("OneSignal API error:", responseData);
+      return { 
+        sent: 0, 
+        failed: userIds.length, 
+        error: responseData.errors?.[0] || `HTTP ${response.status}` 
+      };
+    }
   } catch (e) {
-    console.error("OneSignal error:", e);
-    return 0;
+    return { sent: 0, failed: userIds.length, error: String(e) };
   }
 }
 
-// Helper functions for VAPID/FCM
+// Helper functions
 function base64UrlToUint8Array(base64url: string): Uint8Array {
   const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
   const padding = "=".repeat((4 - (base64.length % 4)) % 4);
@@ -451,7 +673,12 @@ function buildVapidPrivateJwk(vapidPrivateKeySecret: string, vapidPublicKey: str
   return { alg: "ES256", kty: "EC", crv: "P-256", x, y, d: trimmed };
 }
 
-async function getAccessToken(credentials: { client_email: string; private_key: string; token_uri: string }): Promise<string> {
+// OAuth2 for FCM HTTP v1 API (replaces legacy server key auth)
+async function getOAuth2AccessToken(credentials: { 
+  client_email: string; 
+  private_key: string; 
+  token_uri: string 
+}): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
   const payload = {
@@ -490,60 +717,15 @@ async function getAccessToken(credentials: { client_email: string; private_key: 
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 
   const jwt = `${unsignedToken}.${signatureB64}`;
+  
   const tokenResponse = await fetch(credentials.token_uri, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
   });
 
-  if (!tokenResponse.ok) {
-    throw new Error(`Failed to get access token: ${await tokenResponse.text()}`);
-  }
-
-  return (await tokenResponse.json()).access_token;
-}
-
-async function sendFCMNotification(
-  accessToken: string,
-  projectId: string,
-  fcmToken: string,
-  notification: { title: string; body: string },
-  data: Record<string, string>,
-  isNative: boolean
-): Promise<boolean> {
-  const url = `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`;
-  const messagePayload: Record<string, unknown> = {
-    token: fcmToken,
-    notification,
-    data,
-  };
-
-  if (isNative) {
-    messagePayload.android = {
-      notification: { icon: "ic_notification", color: "#7C3AED" },
-      priority: "high",
-    };
-    messagePayload.apns = { payload: { aps: { sound: "default", badge: 1 } } };
-  } else {
-    messagePayload.webpush = {
-      notification: { icon: "/favicon.ico", badge: "/favicon.ico" },
-      fcm_options: { link: "/dashboard" },
-    };
-  }
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ message: messagePayload }),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  const tokenData = await tokenResponse.json();
+  return tokenData.access_token;
 }
 
 serve(handler);
