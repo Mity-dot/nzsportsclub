@@ -143,10 +143,18 @@ const translations: Translations = {
   memberRemoved: { en: 'Member removed successfully', bg: 'Членът е премахнат успешно' },
   staffRemoved: { en: 'Staff removed successfully', bg: 'Персоналът е премахнат успешно' },
   
+  // Profile editor
+  cardPhoto: { en: 'Card Photo', bg: 'Снимка на карта' },
+  uploadPhoto: { en: 'Upload Photo', bg: 'Качи снимка' },
+  changePhoto: { en: 'Change Photo', bg: 'Смени снимка' },
+  cardPhotoDescription: { en: 'Photo of your membership card', bg: 'Снимка на членската ви карта' },
+  autoReserve: { en: 'Auto-reserve', bg: 'Автоматична резервация' },
+  editProfile: { en: 'Edit Profile', bg: 'Редактирай профил' },
+
   // Card member signup
   takeCardPhoto: { en: 'Take a photo of your membership card', bg: 'Направете снимка на членската си карта' },
   cardPhotoHint: { en: 'Position your card clearly in the frame', bg: 'Позиционирайте картата ясно в рамката' },
-  
+
   // Days
   monday: { en: 'Monday', bg: 'Понеделник' },
   tuesday: { en: 'Tuesday', bg: 'Вторник' },
