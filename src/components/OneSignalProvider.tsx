@@ -16,6 +16,9 @@ const OneSignalContext = createContext<OneSignalContextType>({
 
 export const useOneSignal = () => useContext(OneSignalContext);
 
+// Production domain where OneSignal is configured
+const PRODUCTION_DOMAIN = 'nzsportsclub.lovable.app';
+
 declare global {
   interface Window {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -33,8 +36,18 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
   const initRef = useRef(false);
   const userSetRef = useRef<string | null>(null);
 
-  // Fetch OneSignal App ID from edge function
+  // Check if we're on the production domain
+  const isProductionDomain = typeof window !== 'undefined' && 
+    window.location.hostname === PRODUCTION_DOMAIN;
+
+  // Fetch OneSignal App ID from edge function (only on production)
   useEffect(() => {
+    // Only initialize OneSignal on production domain
+    if (!isProductionDomain) {
+      console.log('OneSignal: Skipping initialization (not on production domain)');
+      return;
+    }
+
     let mounted = true;
     
     const fetchAppId = async () => {
@@ -57,30 +70,31 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isProductionDomain]);
 
-  // Initialize OneSignal when appId is available
+  // Initialize OneSignal when appId is available (production only)
   useEffect(() => {
-    if (!appId || initRef.current) return;
+    if (!appId || initRef.current || !isProductionDomain) return;
     initRef.current = true;
 
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     window.OneSignalDeferred.push(async function(OneSignal: any) {
       try {
         await OneSignal.init({
           appId,
-          allowLocalhostAsSecureOrigin: true,
           serviceWorkerParam: { scope: '/' },
           serviceWorkerPath: '/OneSignalSDKWorker.js',
         });
         
-        console.log('OneSignal initialized');
+        console.log('OneSignal initialized successfully');
         setIsInitialized(true);
         
         const permission = OneSignal.Notifications.permission;
         setIsSubscribed(permission);
         
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         OneSignal.Notifications.addEventListener('permissionChange', (perm: boolean) => {
           console.log('Notification permission changed:', perm);
           setIsSubscribed(perm);
@@ -99,13 +113,14 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
       script.defer = true;
       document.head.appendChild(script);
     }
-  }, [appId]);
+  }, [appId, isProductionDomain]);
 
-  // Set external user ID when user logs in
+  // Set external user ID when user logs in (production only)
   useEffect(() => {
-    if (!isInitialized || !user || userSetRef.current === user.id) return;
+    if (!isInitialized || !user || userSetRef.current === user.id || !isProductionDomain) return;
     userSetRef.current = user.id;
     
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     window.OneSignalDeferred?.push(async function(OneSignal: any) {
       try {
         await OneSignal.login(user.id);
@@ -114,10 +129,17 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
         console.error('OneSignal: Error setting external user ID:', error);
       }
     });
-  }, [isInitialized, user]);
+  }, [isInitialized, user, isProductionDomain]);
 
   const requestPermission = useCallback(async () => {
+    // On non-production domains, just resolve immediately
+    if (!isProductionDomain) {
+      console.log('OneSignal: Permission request skipped (not on production domain)');
+      return;
+    }
+
     return new Promise<void>((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       window.OneSignalDeferred?.push(async function(OneSignal: any) {
         try {
           await OneSignal.Notifications.requestPermission();
@@ -130,7 +152,7 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
         }
       });
     });
-  }, []);
+  }, [isProductionDomain]);
 
   return (
     <OneSignalContext.Provider value={{ isInitialized, isSubscribed, requestPermission }}>
