@@ -424,7 +424,7 @@ export default function Dashboard() {
 
     if (existingReservation?.id) {
       if (existingReservation.is_active) {
-        toast({ title: t('alreadyReserved') });
+        toast({ title: t('alreadyBooked') });
       } else {
         const { error: reactivateError } = await supabase
           .from('reservations')
@@ -438,7 +438,7 @@ export default function Dashboard() {
             description: reactivateError.message,
           });
         } else {
-          toast({ title: t('reservationSuccess') });
+          toast({ title: t('bookingSuccess') });
           fetchReservations();
           fetchWorkouts();
         }
@@ -460,7 +460,7 @@ export default function Dashboard() {
         description: error.message,
       });
     } else {
-      toast({ title: t('reservationSuccess') });
+      toast({ title: t('bookingSuccess') });
       fetchReservations();
       fetchWorkouts();
       
@@ -513,7 +513,7 @@ export default function Dashboard() {
         description: error.message,
       });
     } else {
-      toast({ title: t('reservationCancelled') });
+      toast({ title: t('bookingCancelled') });
       fetchReservations();
       fetchWorkouts();
       
@@ -709,7 +709,7 @@ export default function Dashboard() {
             {autoReserveEnabled && (
               <div className="pl-8 border-l-2 border-primary/20 space-y-2">
                 <p className="text-sm font-medium">
-                  {t('autoReserveFor')}
+                  {t('autoBookFor')}
                 </p>
                 <div className="flex gap-2">
                   <Button
@@ -872,7 +872,7 @@ export default function Dashboard() {
                                 {!isPassed && reservationStatus.status === 'not_open' && (
                                   <Badge variant="outline">
                                     <Lock className="h-3 w-3 mr-1" />
-                                    {t('reservationNotOpen')}
+                                    {t('bookingNotOpen')}
                                   </Badge>
                                 )}
                               </div>
@@ -912,7 +912,7 @@ export default function Dashboard() {
                                   disabled={loadingWorkout === workout.id}
                                   className="w-full sm:w-auto"
                                 >
-                                  {loadingWorkout === workout.id ? t('loading') : t('cancelReservation')}
+                                  {loadingWorkout === workout.id ? t('loading') : t('cancelBooking')}
                                 </Button>
                               ) : isOnWaitingList ? (
                                 <div className="flex flex-col gap-1">
@@ -950,8 +950,8 @@ export default function Dashboard() {
                                       : !canMakeReservation && reservationStatus.status === 'priority'
                                         ? t('cardPriorityPeriod')
                                         : !canMakeReservation
-                                          ? t('reservationNotOpen')
-                                          : t('reserve')
+                                          ? t('bookingNotOpen')
+                                          : t('book')
                                   }
                                 </Button>
                               )}

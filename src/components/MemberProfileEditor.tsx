@@ -252,7 +252,7 @@ export function MemberProfileEditor() {
                 <div className="flex items-center gap-2">
                   <Crown className="h-4 w-4 text-primary" />
                   <Label className="font-medium">
-                    {language === 'bg' ? 'Автоматична резервация' : 'Auto-reserve'}
+                    {language === 'bg' ? 'Авто-записване' : 'Auto-book'}
                   </Label>
                 </div>
                 <Switch
@@ -264,7 +264,7 @@ export function MemberProfileEditor() {
               {autoReserveEnabled && (
                 <div className="pl-6 border-l-2 border-primary/20 space-y-2">
                   <Label className="text-sm">
-                    {language === 'bg' ? 'Авто-резервация за' : 'Auto-reserve for'}
+                    {language === 'bg' ? 'Авто-записване за' : 'Auto-book for'}
                   </Label>
                   <div className="flex gap-2">
                     <Button

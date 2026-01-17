@@ -980,7 +980,7 @@ export default function StaffDashboard() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>{t('reservationOpensHours')}</Label>
+                      <Label>{t('bookingOpensHours')}</Label>
                       <Input
                         type="number"
                         min={1}
@@ -1272,7 +1272,7 @@ export default function StaffDashboard() {
             </DialogHeader>
             <div className="py-2 text-sm text-muted-foreground flex items-center justify-between">
               <span>
-                {t('reservationsMade')}: <span className="font-medium text-foreground">{workoutReservations.length}</span>
+                {t('bookingsMade')}: <span className="font-medium text-foreground">{workoutReservations.length}</span>
               </span>
               {selectedWorkout && (
                 <span>
