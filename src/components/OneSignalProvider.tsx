@@ -18,7 +18,9 @@ export const useOneSignal = () => useContext(OneSignalContext);
 
 declare global {
   interface Window {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     OneSignalDeferred?: Array<(OneSignal: any) => void>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     OneSignal?: any;
   }
 }
