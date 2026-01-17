@@ -70,21 +70,21 @@ const translations: Translations = {
   maxSpots: { en: 'Max Spots', bg: 'Макс. места' },
   availableSpots: { en: 'Available Spots', bg: 'Свободни места' },
   cardPriority: { en: 'Card Member Priority', bg: 'Приоритет за картови членове' },
-  reservationOpensHours: { en: 'Reservation opens (hours before)', bg: 'Резервации се отварят (часове преди)' },
-  reservationNotOpen: { en: 'Reservations not open yet', bg: 'Резервациите още не са отворени' },
+  bookingOpensHours: { en: 'Booking opens (hours before)', bg: 'Записване се отваря (часове преди)' },
+  bookingNotOpen: { en: 'Booking not open yet', bg: 'Записването още не е отворено' },
   cardPriorityPeriod: { en: 'Card member priority period', bg: 'Период за приоритет на картови членове' },
   
   // Reservations
-  reserve: { en: 'Reserve Spot', bg: 'Резервирай място' },
-  cancelReservation: { en: 'Cancel Reservation', bg: 'Откажи резервация' },
-  reserved: { en: 'Reserved', bg: 'Резервирано' },
+  book: { en: 'Book Spot', bg: 'Запиши се' },
+  cancelBooking: { en: 'Cancel Booking', bg: 'Откажи записване' },
+  booked: { en: 'Booked', bg: 'Записан' },
   spotsFull: { en: 'Spots Full', bg: 'Няма места' },
   priorityPeriod: { en: 'Card members priority booking', bg: 'Приоритетно записване за картови членове' },
   
   // Attendance
   attendance: { en: 'Attendance', bg: 'Посещаемост' },
   markAttendance: { en: 'Mark Attendance', bg: 'Отбележи присъствие' },
-  reservationsMade: { en: 'Reservations', bg: 'Резервации' },
+  bookingsMade: { en: 'Bookings', bg: 'Записвания' },
   attended: { en: 'Attended', bg: 'Присъствал' },
   absent: { en: 'Absent', bg: 'Отсъствал' },
   regularAttendee: { en: 'Regular', bg: 'Редовен' },
@@ -94,7 +94,7 @@ const translations: Translations = {
   manageWorkouts: { en: 'Manage Workouts', bg: 'Управление на тренировки' },
   manageMembers: { en: 'Manage Members', bg: 'Управление на членове' },
   memberDetails: { en: 'Member Details', bg: 'Детайли за член' },
-  viewReservations: { en: 'View Reservations', bg: 'Преглед на резервации' },
+  viewBookings: { en: 'View Bookings', bg: 'Преглед на записвания' },
   pendingApprovals: { en: 'Pending Approvals', bg: 'Чакащи одобрения' },
   
   // Admin
@@ -118,7 +118,7 @@ const translations: Translations = {
   early: { en: 'Early', bg: 'Ранна' },
   late: { en: 'Late', bg: 'Късна' },
   preferredWorkoutType: { en: 'Preferred Workout Type', bg: 'Предпочитан тип тренировка' },
-  autoReserveFor: { en: 'Auto-reserve for', bg: 'Авто-резервация за' },
+  autoBookFor: { en: 'Auto-book for', bg: 'Авто-записване за' },
   
   // Waiting list
   joinWaitingList: { en: 'Join Waiting List', bg: 'Запиши се в листа за чакане' },
@@ -135,9 +135,9 @@ const translations: Translations = {
   // Messages
   signUpSuccess: { en: 'Account created successfully!', bg: 'Акаунтът е създаден успешно!' },
   staffPending: { en: 'Your staff account is pending approval', bg: 'Вашият акаунт за персонал очаква одобрение' },
-  reservationSuccess: { en: 'Reservation confirmed!', bg: 'Резервацията е потвърдена!' },
-  reservationCancelled: { en: 'Reservation cancelled', bg: 'Резервацията е отменена' },
-  alreadyReserved: { en: 'You already have a reservation for this workout', bg: 'Вече имате резервация за тази тренировка' },
+  bookingSuccess: { en: 'Booking confirmed!', bg: 'Записването е потвърдено!' },
+  bookingCancelled: { en: 'Booking cancelled', bg: 'Записването е отменено' },
+  alreadyBooked: { en: 'You already have a booking for this workout', bg: 'Вече имате записване за тази тренировка' },
   memberPromoted: { en: 'Member promoted successfully', bg: 'Членът е повишен успешно' },
   memberDemoted: { en: 'Member demoted successfully', bg: 'Членът е понижен успешно' },
   memberRemoved: { en: 'Member removed successfully', bg: 'Членът е премахнат успешно' },
@@ -148,7 +148,7 @@ const translations: Translations = {
   uploadPhoto: { en: 'Upload Photo', bg: 'Качи снимка' },
   changePhoto: { en: 'Change Photo', bg: 'Смени снимка' },
   cardPhotoDescription: { en: 'Photo of your membership card', bg: 'Снимка на членската ви карта' },
-  autoReserve: { en: 'Auto-reserve', bg: 'Автоматична резервация' },
+  autoBook: { en: 'Auto-book', bg: 'Авто-записване' },
   editProfile: { en: 'Edit Profile', bg: 'Редактирай профил' },
 
   // Card member signup
