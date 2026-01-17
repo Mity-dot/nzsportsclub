@@ -12,6 +12,7 @@ import LanguageSelect from "./pages/LanguageSelect";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import StaffDashboard from "./pages/StaffDashboard";
+import DebugOneSignal from "./pages/DebugOneSignal";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -27,11 +28,12 @@ const App = () => (
             <Sonner />
             <BrowserRouter>
               <Routes>
-                <Route path="/" element={<Index />} />
+              <Route path="/" element={<Index />} />
                 <Route path="/language" element={<LanguageSelect />} />
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/staff" element={<StaffDashboard />} />
+                <Route path="/debug-onesignal" element={<DebugOneSignal />} />
                 <Route path="*" element={<NotFound />} />
               </Routes>
             </BrowserRouter>
