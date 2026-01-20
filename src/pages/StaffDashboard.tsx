@@ -100,6 +100,7 @@ export default function StaffDashboard() {
   const [manageMembersWorkout, setManageMembersWorkout] = useState<Workout | null>(null);
   const [manageMembersReservations, setManageMembersReservations] = useState<Reservation[]>([]);
   const [manageMembersWaitingList, setManageMembersWaitingList] = useState<{ id: string; user_id: string; position: number; profiles?: Profile }[]>([]);
+  const [manageMembersReservationCount, setManageMembersReservationCount] = useState<number>(0);
   const [autoReserving, setAutoReserving] = useState(false);
   
   // Workout form
@@ -650,7 +651,12 @@ export default function StaffDashboard() {
   };
 
   const fetchManageMembersReservations = async (workoutId: string) => {
-    // Fetch reservations
+    // Use RPC for consistent reservation count (same as Dashboard)
+    const { data: countData } = await supabase
+      .rpc('get_reservation_count', { p_workout_id: workoutId });
+    setManageMembersReservationCount(countData ?? 0);
+    
+    // Fetch reservations with profiles for display
     const { data: reservations } = await supabase
       .from('reservations')
       .select('*')
@@ -664,9 +670,12 @@ export default function StaffDashboard() {
         .select('id, user_id, full_name, email, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
         .in('user_id', userIds);
       
+      // Build profile map for faster lookup
+      const profileMap = new Map(profiles?.map(p => [p.user_id, p]) || []);
+      
       const reservationsWithProfiles = reservations.map(r => ({
         ...r,
-        profiles: profiles?.find(p => p.user_id === r.user_id),
+        profiles: profileMap.get(r.user_id),
       }));
       
       setManageMembersReservations(reservationsWithProfiles as Reservation[]);
@@ -674,10 +683,10 @@ export default function StaffDashboard() {
       setManageMembersReservations([]);
     }
     
-    // Fetch waiting list
+    // Fetch waiting list with profiles - use same approach as reservations
     const { data: waitingList } = await supabase
       .from('waiting_list')
-      .select('*')
+      .select('id, user_id, position, is_active')
       .eq('workout_id', workoutId)
       .eq('is_active', true)
       .order('position');
@@ -686,12 +695,17 @@ export default function StaffDashboard() {
       const waitingUserIds = waitingList.map(w => w.user_id);
       const { data: waitingProfiles } = await supabase
         .from('profiles')
-        .select('id, user_id, full_name, email, member_type, card_image_url')
+        .select('id, user_id, full_name, email, member_type, card_image_url, phone')
         .in('user_id', waitingUserIds);
       
+      // Build a map for faster lookup
+      const profileMap = new Map(waitingProfiles?.map(p => [p.user_id, p]) || []);
+      
       const waitingWithProfiles = waitingList.map(w => ({
-        ...w,
-        profiles: waitingProfiles?.find(p => p.user_id === w.user_id),
+        id: w.id,
+        user_id: w.user_id,
+        position: w.position,
+        profiles: profileMap.get(w.user_id) as Profile | undefined,
       }));
       
       setManageMembersWaitingList(waitingWithProfiles);
@@ -1428,7 +1442,7 @@ export default function StaffDashboard() {
               </DialogTitle>
             </DialogHeader>
             <div className="py-2 text-sm text-muted-foreground">
-              {language === 'bg' ? 'Записани' : 'Enrolled'}: <span className="font-medium text-foreground">{manageMembersReservations.length}</span>
+              {language === 'bg' ? 'Записани' : 'Enrolled'}: <span className="font-medium text-foreground">{manageMembersReservationCount}</span>
               {manageMembersWorkout && (
                 <> / {manageMembersWorkout.max_spots} {language === 'bg' ? 'места' : 'spots'}</>
               )}
