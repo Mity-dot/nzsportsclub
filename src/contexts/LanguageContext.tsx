@@ -126,6 +126,7 @@ const translations: Translations = {
   waitingList: { en: 'Waiting List', bg: 'Лист за чакане' },
   yourPosition: { en: 'Your position', bg: 'Вашата позиция' },
   workoutPassed: { en: 'Workout has passed', bg: 'Тренировката е приключила' },
+  alreadyOnWaitingList: { en: 'You are already on the waiting list', bg: 'Вече сте в листа за чакане' },
   
   // Language
   language: { en: 'Language', bg: 'Език' },

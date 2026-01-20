@@ -306,6 +306,7 @@ export default function Dashboard() {
     const alreadyOnList = waitingList.some(w => w.workout_id === workout.id);
     if (alreadyOnList) return false;
     
+    // Block joining waiting list if already have an active booking
     const alreadyReserved = reservations.some(r => r.workout_id === workout.id);
     if (alreadyReserved) return false;
     
@@ -322,7 +323,59 @@ export default function Dashboard() {
     
     setLoadingWorkout(workoutId);
     
-    // Get next position
+    // Check if user already has an existing entry (active or inactive)
+    const { data: existingEntry, error: existingError } = await supabase
+      .from('waiting_list')
+      .select('id, is_active')
+      .eq('workout_id', workoutId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existingError) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: existingError.message,
+      });
+      setLoadingWorkout(null);
+      return;
+    }
+
+    // If exists, check if active - reactivate if inactive
+    if (existingEntry) {
+      if (existingEntry.is_active) {
+        toast({ title: t('alreadyOnWaitingList') || 'Already on waiting list' });
+        setLoadingWorkout(null);
+        return;
+      }
+      
+      // Reactivate existing entry with new position
+      const { data: positionData } = await supabase
+        .rpc('get_next_waiting_list_position', { p_workout_id: workoutId });
+      
+      const position = positionData || 1;
+      
+      const { error: reactivateError } = await supabase
+        .from('waiting_list')
+        .update({ is_active: true, position, created_at: new Date().toISOString() })
+        .eq('id', existingEntry.id);
+      
+      if (reactivateError) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: reactivateError.message,
+        });
+      } else {
+        toast({ title: t('joinWaitingList') });
+        fetchWaitingList();
+      }
+      
+      setLoadingWorkout(null);
+      return;
+    }
+    
+    // Get next position for new entry
     const { data: positionData } = await supabase
       .rpc('get_next_waiting_list_position', { p_workout_id: workoutId });
     
@@ -404,6 +457,22 @@ export default function Dashboard() {
 
     setLoadingWorkout(workoutId);
 
+    // First verify the workout isn't full by checking real-time count
+    const { data: currentCount } = await supabase
+      .rpc('get_reservation_count', { p_workout_id: workoutId });
+    
+    const workout = workouts.find(w => w.id === workoutId);
+    if (workout && currentCount !== null && currentCount >= workout.max_spots) {
+      toast({ 
+        variant: 'destructive',
+        title: t('spotsFull'),
+        description: language === 'bg' ? 'Тренировката е пълна' : 'The workout is full'
+      });
+      fetchWorkouts(); // Refresh counts
+      setLoadingWorkout(null);
+      return;
+    }
+
     // If a reservation exists (even cancelled), re-activate it instead of inserting a new row.
     const { data: existingReservation, error: existingError } = await supabase
       .from('reservations')
@@ -425,7 +494,23 @@ export default function Dashboard() {
     if (existingReservation?.id) {
       if (existingReservation.is_active) {
         toast({ title: t('alreadyBooked') });
+        fetchReservations(); // Refresh local state
       } else {
+        // Re-verify spot availability before reactivating
+        const { data: recheckCount } = await supabase
+          .rpc('get_reservation_count', { p_workout_id: workoutId });
+        
+        if (workout && recheckCount !== null && recheckCount >= workout.max_spots) {
+          toast({ 
+            variant: 'destructive',
+            title: t('spotsFull'),
+            description: language === 'bg' ? 'Тренировката е пълна' : 'The workout is full'
+          });
+          fetchWorkouts();
+          setLoadingWorkout(null);
+          return;
+        }
+
         const { error: reactivateError } = await supabase
           .from('reservations')
           .update({ is_active: true, cancelled_at: null, reserved_at: new Date().toISOString() })
@@ -454,26 +539,28 @@ export default function Dashboard() {
     });
 
     if (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: error.message,
-      });
+      // Check if this is a duplicate key error (race condition)
+      if (error.code === '23505' || error.message.includes('duplicate')) {
+        toast({ title: t('alreadyBooked') });
+        fetchReservations();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: error.message,
+        });
+      }
     } else {
       toast({ title: t('bookingSuccess') });
       fetchReservations();
       fetchWorkouts();
       
       // Check if workout is now full and notify staff
-      const workout = workouts.find(w => w.id === workoutId);
       if (workout) {
-        const { count } = await supabase
-          .from('reservations')
-          .select('*', { count: 'exact', head: true })
-          .eq('workout_id', workoutId)
-          .eq('is_active', true);
+        const { data: countData } = await supabase
+          .rpc('get_reservation_count', { p_workout_id: workoutId });
         
-        if (count && count >= workout.max_spots) {
+        if (countData && countData >= workout.max_spots) {
           // Notify when workout is full (unified notification handles staff targeting for this type)
           try {
             await sendWorkoutNotification({
@@ -844,8 +931,30 @@ export default function Dashboard() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.1 }}
                     >
-                      <Card className={`overflow-hidden border-border/50 shadow-sm hover:shadow-elegant transition-shadow ${workout.card_priority_enabled ? 'ring-1 ring-primary/30' : ''} ${isPassed ? 'opacity-60' : ''}`}>
+                      <Card className={`overflow-hidden border-border/50 shadow-sm hover:shadow-elegant transition-shadow ${workout.card_priority_enabled ? 'ring-1 ring-primary/30' : ''} ${isPassed ? 'opacity-60' : ''} ${reserved ? 'ring-2 ring-green-500/50' : ''} ${isOnWaitingList ? 'ring-2 ring-amber-500/50' : ''}`}>
                         <CardContent className="p-4 sm:p-6">
+                          {/* User status banner */}
+                          {(reserved || isOnWaitingList) && !isPassed && (
+                            <div className={`-mx-4 sm:-mx-6 -mt-4 sm:-mt-6 mb-4 px-4 py-2 ${reserved ? 'bg-green-500/10 border-b border-green-500/20' : 'bg-amber-500/10 border-b border-amber-500/20'}`}>
+                              <div className="flex items-center gap-2">
+                                {reserved ? (
+                                  <>
+                                    <div className="h-2 w-2 rounded-full bg-green-500" />
+                                    <span className="text-sm font-medium text-green-700 dark:text-green-400">
+                                      {language === 'bg' ? 'Записан/а' : 'Booked'}
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="h-2 w-2 rounded-full bg-amber-500" />
+                                    <span className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                                      {language === 'bg' ? 'В листа за чакане' : 'On Waiting List'} (#{waitingPosition})
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="space-y-2">
                               <div className="flex items-center gap-2 flex-wrap">
