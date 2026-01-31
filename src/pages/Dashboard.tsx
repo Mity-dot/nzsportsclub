@@ -82,6 +82,22 @@ export default function Dashboard() {
     fetchWaitingList();
   }, [selectedDate]);
 
+  // Keep counts in sync across users/devices (no realtime subscriptions)
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      fetchWorkouts();
+      fetchReservations();
+      fetchWaitingList();
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+    // selectedDate changes the visible week; user changes should reset polling too
+  }, [selectedDate, user?.id]);
+
+  const refreshAll = async () => {
+    await Promise.all([fetchWorkouts(), fetchReservations(), fetchWaitingList()]);
+  };
+
   // Fetch auto-reserve preference for card members
   useEffect(() => {
     const fetchAutoReservePref = async () => {
@@ -368,7 +384,7 @@ export default function Dashboard() {
         });
       } else {
         toast({ title: t('joinWaitingList') });
-        fetchWaitingList();
+        await refreshAll();
       }
       
       setLoadingWorkout(null);
@@ -398,7 +414,7 @@ export default function Dashboard() {
       });
     } else {
       toast({ title: t('joinWaitingList') });
-      fetchWaitingList();
+      await refreshAll();
     }
     
     setLoadingWorkout(null);
@@ -423,7 +439,7 @@ export default function Dashboard() {
       });
     } else {
       toast({ title: t('leaveWaitingList') });
-      fetchWaitingList();
+      await refreshAll();
     }
     
     setLoadingWorkout(null);
@@ -524,8 +540,7 @@ export default function Dashboard() {
           });
         } else {
           toast({ title: t('bookingSuccess') });
-          fetchReservations();
-          fetchWorkouts();
+          await refreshAll();
         }
       }
 
@@ -542,7 +557,7 @@ export default function Dashboard() {
       // Check if this is a duplicate key error (race condition)
       if (error.code === '23505' || error.message.includes('duplicate')) {
         toast({ title: t('alreadyBooked') });
-        fetchReservations();
+        await refreshAll();
       } else {
         toast({
           variant: 'destructive',
@@ -552,8 +567,7 @@ export default function Dashboard() {
       }
     } else {
       toast({ title: t('bookingSuccess') });
-      fetchReservations();
-      fetchWorkouts();
+      await refreshAll();
       
       // Check if workout is now full and notify staff
       if (workout) {
@@ -601,18 +615,16 @@ export default function Dashboard() {
       });
     } else {
       toast({ title: t('bookingCancelled') });
-      fetchReservations();
-      fetchWorkouts();
-      
-      // Automatically promote from waiting list
+
+      // Automatically promote from waiting list BEFORE refreshing counts (prevents temporary mismatches)
       if (workout) {
         try {
           const { data: promotedUserId, error: promoteError } = await supabase
             .rpc('promote_from_waiting_list', { p_workout_id: workoutId });
-          
+
           if (promotedUserId && !promoteError) {
             console.log('Promoted user from waiting list:', promotedUserId);
-            
+
             // Notify the promoted user
             await sendWorkoutNotification({
               type: 'waiting_list_promoted',
@@ -635,6 +647,8 @@ export default function Dashboard() {
           console.log('Waiting list promotion or notification failed:', e);
         }
       }
+
+      await refreshAll();
     }
     
     setLoadingWorkout(null);
@@ -1001,7 +1015,8 @@ export default function Dashboard() {
                                   <Users className="h-4 w-4" />
                                   {available} / {workout.max_spots} {t('availableSpots').toLowerCase()}
                                 </span>
-                                {waitingCount > 0 && (
+                                {/* Waiting list UI should not appear for users who already booked */}
+                                {!reserved && waitingCount > 0 && (
                                   <span className="text-xs text-muted-foreground">
                                     ({waitingCount} {t('waitingList').toLowerCase()})
                                   </span>
