@@ -621,7 +621,8 @@ async function sendOneSignalBatch(
         // Android specific
         priority: 10,
         // Web specific
-        web_push_topic: body.type,
+        web_push_topic: `${body.type}_${body.workoutId}`,
+        collapse_id: `${body.type}_${body.workoutId}`,
         chrome_web_icon: "/favicon.ico",
         chrome_web_badge: "/favicon.ico",
         // TTL
