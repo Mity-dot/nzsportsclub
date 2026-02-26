@@ -58,6 +58,9 @@ export default function Dashboard() {
   const { toast } = useToast();
   const { isSubscribed, requestPermission, isInitialized } = useOneSignal();
   const [notificationDismissed, setNotificationDismissed] = useState(false);
+  const browserNotificationsSupported = typeof window !== 'undefined' && 'Notification' in window;
+  const browserPermission = browserNotificationsSupported ? Notification.permission : 'denied';
+  const showNotificationBanner = browserNotificationsSupported && browserPermission === 'default' && !notificationDismissed;
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -762,7 +765,7 @@ export default function Dashboard() {
       </header>
 
       {/* Notification Permission Banner */}
-      {isInitialized && !isSubscribed && !notificationDismissed && (
+      {showNotificationBanner && (
         <div className="bg-primary/10 border border-primary/20 px-4 py-3 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <BellRing className="h-5 w-5 text-primary flex-shrink-0" />
