@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 interface NotificationRequest {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
@@ -88,6 +88,13 @@ function getNotificationContent(
           ? `Освободи се място за "${displayTitle}" и вие сте записани!`
           : `A spot opened for "${displayTitle}" and you're in!`,
       };
+    case "workout_reminder":
+      return {
+        title: isBg ? "⏰ NZ Напомняне" : "⏰ NZ Reminder",
+        body: isBg 
+          ? `"${displayTitle}" започва в ${formattedTime} днес!`
+          : `"${displayTitle}" starts at ${formattedTime} today!`,
+      };
     default:
       return {
         title: "NZ Sport Club",
@@ -142,7 +149,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       const staffUserIds = new Set(staffRoles?.map(r => r.user_id) || []);
 
-      if (type === "new_workout" || type === "workout_updated" || type === "spot_freed") {
+      if (type === "new_workout" || type === "workout_updated" || type === "spot_freed" || type === "workout_reminder") {
         userIdsToNotify = profiles?.filter(p => !staffUserIds.has(p.user_id)).map(p => p.user_id) || [];
       } else if (type === "workout_deleted") {
         userIdsToNotify = profiles?.filter(p => !staffUserIds.has(p.user_id)).map(p => p.user_id) || [];
