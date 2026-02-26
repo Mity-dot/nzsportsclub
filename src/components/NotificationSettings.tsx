@@ -90,6 +90,8 @@ export function NotificationSettings() {
         return '🎉';
       case 'workout_full':
         return '📋';
+      case 'workout_reminder':
+        return '⏰';
       default:
         return '🔔';
     }

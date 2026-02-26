@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type WorkoutNotificationRequest = {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
