@@ -2,7 +2,7 @@ import { BellOff, BellRing, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useNotificationSubscription } from '@/hooks/useNotificationSubscription';
+import { useOneSignal } from '@/components/OneSignalProvider';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
@@ -18,52 +18,31 @@ import { bg, enUS } from 'date-fns/locale';
 export function NotificationSettings() {
   const { t, language } = useLanguage();
   const { toast } = useToast();
-  const { isSubscribed, isLoading: subLoading, isSupported, subscribe, unsubscribe } = useNotificationSubscription();
+  const { isSubscribed, isInitialized, requestPermission } = useOneSignal();
   const { notifications, unreadCount, isLoading: notifLoading, clearNotifications } = useNotifications();
   const [isToggling, setIsToggling] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
   const handleToggle = async () => {
-    if (isToggling || subLoading) return;
+    if (isToggling) return;
 
     setIsToggling(true);
     try {
-      if (isSubscribed) {
-        const result = await unsubscribe();
-        if (result.success) {
-          toast({
-            title: t('notifications'),
-            description: language === 'bg' ? 'Известията са изключени' : 'Notifications disabled',
-          });
-        } else {
-          toast({
-            title: t('notifications'),
-            description:
-              language === 'bg'
-                ? (result.error ?? 'Неуспешно изключване на известията')
-                : (result.error ?? 'Failed to disable notifications'),
-          });
-        }
-      } else {
-        const result = await subscribe();
-        if (result.success) {
-          toast({
-            title: t('notifications'),
-            description:
-              language === 'bg'
-                ? 'Известията са включени! Ще бъдете уведомявани за нови тренировки.'
-                : 'Notifications enabled! You will be notified about new workouts.',
-          });
-        } else {
-          toast({
-            title: t('notifications'),
-            description:
-              language === 'bg'
-                ? (result.error ?? 'Неуспешно включване на известията. Проверете разрешенията на браузъра.')
-                : (result.error ?? 'Failed to enable notifications. Check browser permissions.'),
-          });
-        }
-      }
+      await requestPermission();
+      toast({
+        title: t('notifications'),
+        description: language === 'bg'
+          ? 'Известията са включени! Ще бъдете уведомявани за нови тренировки.'
+          : 'Notifications enabled! You will be notified about new workouts.',
+      });
+    } catch {
+      toast({
+        title: t('notifications'),
+        description: language === 'bg'
+          ? 'Неуспешно включване на известията.'
+          : 'Failed to enable notifications.',
+        variant: 'destructive',
+      });
     } finally {
       setIsToggling(false);
     }
@@ -76,24 +55,19 @@ export function NotificationSettings() {
     }
   };
 
-  const showLoading = subLoading || isToggling;
+  const showLoading = isToggling;
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
-      case 'new_workout':
-        return '🏋️';
-      case 'workout_updated':
-        return '📝';
-      case 'workout_deleted':
-        return '❌';
-      case 'spot_freed':
-        return '🎉';
-      case 'workout_full':
-        return '📋';
-      case 'workout_reminder':
-        return '⏰';
-      default:
-        return '🔔';
+      case 'new_workout': return '🏋️';
+      case 'workout_updated': return '📝';
+      case 'workout_deleted': return '❌';
+      case 'spot_freed': return '🎉';
+      case 'workout_full': return '📋';
+      case 'workout_reminder': return '⏰';
+      case 'auto_reserved': return '🎫';
+      case 'waiting_list_promoted': return '🎉';
+      default: return '🔔';
     }
   };
 
@@ -122,7 +96,6 @@ export function NotificationSettings() {
       </PopoverTrigger>
       <PopoverContent className="w-80" align="end">
         <div className="space-y-4">
-          {/* Toggle section */}
           <div className="flex items-center justify-between">
             <div className="space-y-0.5">
               <h4 className="font-medium text-sm">{t('notifications')}</h4>
@@ -137,51 +110,48 @@ export function NotificationSettings() {
             <Switch
               checked={isSubscribed}
               onCheckedChange={handleToggle}
-              disabled={showLoading || !isSupported}
+              disabled={showLoading}
             />
           </div>
 
-          {/* Notifications list */}
-          {isSubscribed && notifications.length > 0 && (
-            <>
-              <div className="border-t pt-3">
-                <h5 className="text-xs font-medium text-muted-foreground mb-2">
-                  {language === 'bg' ? 'Последни известия' : 'Recent notifications'}
-                </h5>
-                <ScrollArea className="h-48">
-                  <div className="space-y-2">
-                    {notifications.slice(0, 10).map((notification) => (
-                      <div
-                        key={notification.id}
-                        className="p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors"
-                      >
-                        <div className="flex items-start gap-2">
-                          <span className="text-base mt-0.5">
-                            {getNotificationIcon(notification.notification_type)}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm">
-                              {language === 'bg' && notification.message_bg 
-                                ? notification.message_bg 
-                                : notification.message}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {formatDistanceToNow(new Date(notification.created_at), { 
-                                addSuffix: true,
-                                locale: language === 'bg' ? bg : enUS
-                              })}
-                            </p>
-                          </div>
+          {notifications.length > 0 && (
+            <div className="border-t pt-3">
+              <h5 className="text-xs font-medium text-muted-foreground mb-2">
+                {language === 'bg' ? 'Последни известия' : 'Recent notifications'}
+              </h5>
+              <ScrollArea className="h-48">
+                <div className="space-y-2">
+                  {notifications.slice(0, 10).map((notification) => (
+                    <div
+                      key={notification.id}
+                      className="p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span className="text-base mt-0.5">
+                          {getNotificationIcon(notification.notification_type)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm">
+                            {language === 'bg' && notification.message_bg 
+                              ? notification.message_bg 
+                              : notification.message}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {formatDistanceToNow(new Date(notification.created_at), { 
+                              addSuffix: true,
+                              locale: language === 'bg' ? bg : enUS
+                            })}
+                          </p>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            </>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
           )}
 
-          {isSubscribed && notifications.length === 0 && !notifLoading && (
+          {notifications.length === 0 && !notifLoading && (
             <div className="text-center py-4 text-muted-foreground text-sm">
               {language === 'bg' ? 'Няма известия' : 'No notifications yet'}
             </div>
