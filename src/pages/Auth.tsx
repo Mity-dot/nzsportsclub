@@ -44,20 +44,38 @@ export default function Auth() {
   const [forgotEmailValid, setForgotEmailValid] = useState<boolean | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [recoveryUserEmail, setRecoveryUserEmail] = useState<string | null>(null);
+  const [recoveryUserName, setRecoveryUserName] = useState<string | null>(null);
 
   // Check for password recovery token in URL
   useEffect(() => {
+    const activateRecovery = async () => {
+      setShowPasswordUpdate(true);
+      // Fetch the current session user info
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setRecoveryUserEmail(user.email ?? null);
+        // Try to get the full name from profiles
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        setRecoveryUserName(profileData?.full_name ?? user.user_metadata?.full_name ?? null);
+      }
+    };
+
     // Check hash fragment for recovery type
     const hashParams = new URLSearchParams(window.location.hash.substring(1));
     const type = hashParams.get('type');
     if (type === 'recovery') {
-      setShowPasswordUpdate(true);
+      activateRecovery();
     }
 
     // Listen for auth state changes for recovery
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
-        setShowPasswordUpdate(true);
+        activateRecovery();
       }
     });
 
@@ -310,7 +328,18 @@ export default function Auth() {
           <Card className="border-border/50 shadow-elegant">
             <CardHeader className="text-center">
               <CardTitle className="font-display text-2xl">{t('updatePassword')}</CardTitle>
-              <CardDescription>{t('enterNewPassword')}</CardDescription>
+              {(recoveryUserName || recoveryUserEmail) ? (
+                <div className="mt-2 space-y-1">
+                  {recoveryUserName && (
+                    <p className="text-base font-semibold text-foreground">{recoveryUserName}</p>
+                  )}
+                  {recoveryUserEmail && (
+                    <p className="text-sm text-muted-foreground">{recoveryUserEmail}</p>
+                  )}
+                </div>
+              ) : (
+                <CardDescription>{t('enterNewPassword')}</CardDescription>
+              )}
             </CardHeader>
             <CardContent>
               <form onSubmit={handlePasswordUpdate} className="space-y-4">
