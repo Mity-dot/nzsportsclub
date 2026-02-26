@@ -619,7 +619,6 @@ async function sendOneSignalBatch(
         ios_badgeCount: 1,
         ios_sound: "default",
         // Android specific
-        android_channel_id: "nz_workouts",
         priority: 10,
         // Web specific
         web_push_topic: body.type,
