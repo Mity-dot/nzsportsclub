@@ -361,6 +361,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_email_exists: { Args: { p_email: string }; Returns: boolean }
       get_member_type: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["member_type"]

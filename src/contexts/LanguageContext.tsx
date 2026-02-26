@@ -42,6 +42,7 @@ const translations: Translations = {
   passwordUpdated: { en: 'Password updated successfully!', bg: 'Паролата е актуализирана успешно!' },
   enterEmailForReset: { en: 'Enter your email to receive a reset link', bg: 'Въведете имейла си, за да получите линк за нулиране' },
   invalidEmail: { en: 'Please enter a valid email address', bg: 'Моля, въведете валиден имейл адрес' },
+  emailNotFound: { en: 'No account found with this email address', bg: 'Не е намерен акаунт с този имейл адрес' },
   
   // Member types
   member: { en: 'Member', bg: 'Член' },

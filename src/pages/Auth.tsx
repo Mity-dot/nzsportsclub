@@ -47,25 +47,20 @@ export default function Auth() {
 
   // Check for password recovery token in URL
   useEffect(() => {
-    const handleRecovery = async () => {
-      // Check for recovery mode from hash fragment (Supabase redirects with #access_token=...)
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const type = hashParams.get('type');
-      
-      if (type === 'recovery') {
-        setShowPasswordUpdate(true);
-      }
-    };
-    
-    handleRecovery();
-    
-    // Also listen for auth state changes for recovery
+    // Check hash fragment for recovery type
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const type = hashParams.get('type');
+    if (type === 'recovery') {
+      setShowPasswordUpdate(true);
+    }
+
+    // Listen for auth state changes for recovery
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === 'PASSWORD_RECOVERY') {
         setShowPasswordUpdate(true);
       }
     });
-    
+
     return () => subscription.unsubscribe();
   }, []);
 
@@ -109,6 +104,20 @@ export default function Auth() {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    
+    // Check if email exists in our accounts
+    const { data: emailExists } = await supabase
+      .rpc('check_email_exists', { p_email: forgotEmail.trim() });
+    
+    if (!emailExists) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: t('emailNotFound'),
+      });
+      setIsLoading(false);
+      return;
+    }
     
     const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
       redirectTo: `${window.location.origin}/auth`,
