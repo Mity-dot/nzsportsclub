@@ -13,7 +13,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock, Loader2, Bell, BellRing } from 'lucide-react';
+import { useOneSignal } from '@/components/OneSignalProvider';
 import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours, isBefore } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -55,6 +56,8 @@ export default function Dashboard() {
   const { t, language } = useLanguage();
   const { user, profile, isStaff, isAdmin, isCardMember, signOut, isLoading } = useAuth();
   const { toast } = useToast();
+  const { isSubscribed, requestPermission, isInitialized } = useOneSignal();
+  const [notificationDismissed, setNotificationDismissed] = useState(false);
   
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [workouts, setWorkouts] = useState<Workout[]>([]);
@@ -757,6 +760,29 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Notification Permission Banner */}
+      {isInitialized && !isSubscribed && !notificationDismissed && (
+        <div className="bg-primary/10 border border-primary/20 px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <BellRing className="h-5 w-5 text-primary flex-shrink-0" />
+            <p className="text-sm text-foreground">
+              {language === 'bg' 
+                ? 'Включете известията, за да не пропускате тренировки!' 
+                : 'Enable notifications so you never miss a workout!'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button size="sm" onClick={async () => { await requestPermission(); }}>
+              <Bell className="h-4 w-4 mr-1" />
+              {language === 'bg' ? 'Включи' : 'Enable'}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setNotificationDismissed(true)}>
+              ✕
+            </Button>
+          </div>
+        </div>
+      )}
 
       <main className="container mx-auto px-4 py-6">
         {/* Welcome */}
