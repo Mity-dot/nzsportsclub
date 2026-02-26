@@ -241,7 +241,7 @@ export function useNotificationSubscription() {
       
       // Unsubscribe from any existing subscription first (in case VAPID key changed)
       try {
-        const existingSubscription = await swRegistration.pushManager.getSubscription();
+        const existingSubscription = await (swRegistration as any).pushManager.getSubscription();
         if (existingSubscription) {
           console.log('Unsubscribing from existing push subscription...');
           await existingSubscription.unsubscribe();
@@ -252,7 +252,7 @@ export function useNotificationSubscription() {
       
       let pushSubscription: PushSubscription;
       try {
-        pushSubscription = await swRegistration.pushManager.subscribe({
+        pushSubscription = await (swRegistration as any).pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
         });
@@ -329,7 +329,7 @@ export function useNotificationSubscription() {
         try {
           const swRegistration = await navigator.serviceWorker.getRegistration('/');
           if (swRegistration) {
-            const pushSubscription = await swRegistration.pushManager.getSubscription();
+            const pushSubscription = await (swRegistration as any).pushManager.getSubscription();
             if (pushSubscription) {
               await pushSubscription.unsubscribe();
               console.log('Unsubscribed from Web Push');
