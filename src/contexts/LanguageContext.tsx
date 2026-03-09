@@ -143,6 +143,10 @@ const translations: Translations = {
   memberPromoted: { en: 'Member promoted successfully', bg: 'Членът е повишен успешно' },
   memberDemoted: { en: 'Member demoted successfully', bg: 'Членът е понижен успешно' },
   memberRemoved: { en: 'Member removed successfully', bg: 'Членът е премахнат успешно' },
+  memberRestored: { en: 'Member restored successfully', bg: 'Членът е възстановен успешно' },
+  removedMembers: { en: 'Removed Members', bg: 'Премахнати членове' },
+  restoreMember: { en: 'Restore Member', bg: 'Възстанови член' },
+  noRemovedMembers: { en: 'No removed members', bg: 'Няма премахнати членове' },
   staffRemoved: { en: 'Staff removed successfully', bg: 'Персоналът е премахнат успешно' },
   
   // Profile editor

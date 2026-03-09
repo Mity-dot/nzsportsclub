@@ -438,16 +438,15 @@ export default function StaffDashboard() {
   };
 
   const handleRemoveMember = async (member: MemberWithRole) => {
-    // Delete user roles first
+    // Soft-delete: set removed_at timestamp and remove roles
     await supabase
       .from('user_roles')
       .delete()
       .eq('user_id', member.user_id);
     
-    // Delete profile
     const { error } = await supabase
       .from('profiles')
-      .delete()
+      .update({ removed_at: new Date().toISOString(), member_type: 'regular' })
       .eq('user_id', member.user_id);
     
     if (error) {
@@ -456,6 +455,31 @@ export default function StaffDashboard() {
       toast({ title: t('memberRemoved') });
       fetchMembers();
     }
+  };
+
+  const handleRestoreMember = async (member: MemberWithRole) => {
+    // Clear removed_at and re-add member role
+    const { error } = await supabase
+      .from('profiles')
+      .update({ removed_at: null })
+      .eq('user_id', member.user_id);
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+      return;
+    }
+
+    // Re-add member role
+    await supabase
+      .from('user_roles')
+      .insert({ 
+        user_id: member.user_id, 
+        role: 'member',
+        is_approved: true 
+      });
+    
+    toast({ title: t('memberRestored') });
+    fetchMembers();
   };
 
   const handlePromoteToCard = async (member: MemberWithRole) => {
