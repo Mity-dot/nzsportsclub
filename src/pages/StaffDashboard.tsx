@@ -1311,6 +1311,7 @@ export default function StaffDashboard() {
                 </div>
               )}
             </div>
+          </TabsContent>
 
           {/* Pending Approvals Tab (Admin only) */}
           {isAdmin && (
