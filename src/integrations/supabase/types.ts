@@ -136,6 +136,7 @@ export type Database = {
           phone: string | null
           preferred_language: string | null
           preferred_workout_type: string | null
+          removed_at: string | null
           updated_at: string
           user_id: string
         }
@@ -151,6 +152,7 @@ export type Database = {
           phone?: string | null
           preferred_language?: string | null
           preferred_workout_type?: string | null
+          removed_at?: string | null
           updated_at?: string
           user_id: string
         }
@@ -166,6 +168,7 @@ export type Database = {
           phone?: string | null
           preferred_language?: string | null
           preferred_workout_type?: string | null
+          removed_at?: string | null
           updated_at?: string
           user_id?: string
         }

@@ -54,6 +54,7 @@ interface Profile {
   card_image_url: string | null;
   auto_reserve_enabled?: boolean;
   preferred_workout_type?: string | null;
+  removed_at?: string | null;
 }
 
 interface UserRole {
@@ -91,6 +92,8 @@ export default function StaffDashboard() {
   
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [members, setMembers] = useState<MemberWithRole[]>([]);
+  const [removedMembers, setRemovedMembers] = useState<MemberWithRole[]>([]);
+  const [showRemovedMembers, setShowRemovedMembers] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberWithRole | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
@@ -147,10 +150,10 @@ export default function StaffDashboard() {
   };
 
   const fetchMembers = async () => {
-    // Fetch profiles including auto-reserve preferences
+    // Fetch all profiles including auto-reserve preferences
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, user_id, full_name, email, phone, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
+      .select('id, user_id, full_name, email, phone, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type, removed_at')
       .order('full_name');
     
     if (profiles) {
@@ -159,12 +162,14 @@ export default function StaffDashboard() {
         .from('user_roles')
         .select('*');
       
-      const membersWithRoles: MemberWithRole[] = profiles.map(p => ({
+      const allMembers: MemberWithRole[] = profiles.map(p => ({
         ...p,
         roles: roles?.filter(r => r.user_id === p.user_id) || []
       }));
       
-      setMembers(membersWithRoles);
+      // Split into active and removed
+      setMembers(allMembers.filter(m => !m.removed_at));
+      setRemovedMembers(allMembers.filter(m => !!m.removed_at));
     }
   };
 
@@ -434,16 +439,15 @@ export default function StaffDashboard() {
   };
 
   const handleRemoveMember = async (member: MemberWithRole) => {
-    // Delete user roles first
+    // Soft-delete: set removed_at timestamp and remove roles
     await supabase
       .from('user_roles')
       .delete()
       .eq('user_id', member.user_id);
     
-    // Delete profile
     const { error } = await supabase
       .from('profiles')
-      .delete()
+      .update({ removed_at: new Date().toISOString(), member_type: 'regular' })
       .eq('user_id', member.user_id);
     
     if (error) {
@@ -452,6 +456,31 @@ export default function StaffDashboard() {
       toast({ title: t('memberRemoved') });
       fetchMembers();
     }
+  };
+
+  const handleRestoreMember = async (member: MemberWithRole) => {
+    // Clear removed_at and re-add member role
+    const { error } = await supabase
+      .from('profiles')
+      .update({ removed_at: null })
+      .eq('user_id', member.user_id);
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Error', description: error.message });
+      return;
+    }
+
+    // Re-add member role
+    await supabase
+      .from('user_roles')
+      .insert({ 
+        user_id: member.user_id, 
+        role: 'member',
+        is_approved: true 
+      });
+    
+    toast({ title: t('memberRestored') });
+    fetchMembers();
   };
 
   const handlePromoteToCard = async (member: MemberWithRole) => {
@@ -1237,6 +1266,51 @@ export default function StaffDashboard() {
                   </Card>
                 );
               })}
+            </div>
+
+            {/* Removed Members Section */}
+            <Separator className="my-4" />
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowRemovedMembers(!showRemovedMembers)}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-3"
+              >
+                <UserX className="h-4 w-4" />
+                <span className="font-medium text-sm">
+                  {t('removedMembers')} ({removedMembers.length})
+                </span>
+                <ArrowDown className={`h-3 w-3 transition-transform ${showRemovedMembers ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showRemovedMembers && (
+                <div className="grid gap-3">
+                  {removedMembers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">{t('noRemovedMembers')}</p>
+                  ) : (
+                    removedMembers.map((member) => (
+                      <Card key={member.id} className="border-border/50 opacity-70">
+                        <CardContent className="p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div>
+                              <span className="font-medium">{member.full_name || 'Member'}</span>
+                              <p className="text-xs text-muted-foreground">{member.email}</p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestoreMember(member)}
+                          >
+                            <UserPlus className="h-4 w-4 mr-1" />
+                            {t('restoreMember')}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </TabsContent>
 
