@@ -168,8 +168,8 @@ export default function StaffDashboard() {
       }));
       
       // Split into active and removed
-      setMembers(allMembers.filter(m => !(m as any).removed_at));
-      setRemovedMembers(allMembers.filter(m => (m as any).removed_at));
+      setMembers(allMembers.filter(m => !m.removed_at));
+      setRemovedMembers(allMembers.filter(m => !!m.removed_at));
     }
   };
 
