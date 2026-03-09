@@ -54,6 +54,7 @@ interface Profile {
   card_image_url: string | null;
   auto_reserve_enabled?: boolean;
   preferred_workout_type?: string | null;
+  removed_at?: string | null;
 }
 
 interface UserRole {
