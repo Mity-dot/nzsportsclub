@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN removed_at timestamp with time zone DEFAULT NULL;
