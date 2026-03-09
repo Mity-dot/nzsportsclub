@@ -1266,7 +1266,51 @@ export default function StaffDashboard() {
                 );
               })}
             </div>
-          </TabsContent>
+
+            {/* Removed Members Section */}
+            <Separator className="my-4" />
+            <div>
+              <button
+                type="button"
+                onClick={() => setShowRemovedMembers(!showRemovedMembers)}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-3"
+              >
+                <UserX className="h-4 w-4" />
+                <span className="font-medium text-sm">
+                  {t('removedMembers')} ({removedMembers.length})
+                </span>
+                <ArrowDown className={`h-3 w-3 transition-transform ${showRemovedMembers ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {showRemovedMembers && (
+                <div className="grid gap-3">
+                  {removedMembers.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-4">{t('noRemovedMembers')}</p>
+                  ) : (
+                    removedMembers.map((member) => (
+                      <Card key={member.id} className="border-border/50 opacity-70">
+                        <CardContent className="p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div>
+                              <span className="font-medium">{member.full_name || 'Member'}</span>
+                              <p className="text-xs text-muted-foreground">{member.email}</p>
+                            </div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestoreMember(member)}
+                          >
+                            <UserPlus className="h-4 w-4 mr-1" />
+                            {t('restoreMember')}
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
 
           {/* Pending Approvals Tab (Admin only) */}
           {isAdmin && (
