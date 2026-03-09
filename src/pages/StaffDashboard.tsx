@@ -149,10 +149,10 @@ export default function StaffDashboard() {
   };
 
   const fetchMembers = async () => {
-    // Fetch profiles including auto-reserve preferences
+    // Fetch all profiles including auto-reserve preferences
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, user_id, full_name, email, phone, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type')
+      .select('id, user_id, full_name, email, phone, member_type, card_image_url, auto_reserve_enabled, preferred_workout_type, removed_at')
       .order('full_name');
     
     if (profiles) {
@@ -161,12 +161,14 @@ export default function StaffDashboard() {
         .from('user_roles')
         .select('*');
       
-      const membersWithRoles: MemberWithRole[] = profiles.map(p => ({
+      const allMembers: MemberWithRole[] = profiles.map(p => ({
         ...p,
         roles: roles?.filter(r => r.user_id === p.user_id) || []
       }));
       
-      setMembers(membersWithRoles);
+      // Split into active and removed
+      setMembers(allMembers.filter(m => !(m as any).removed_at));
+      setRemovedMembers(allMembers.filter(m => (m as any).removed_at));
     }
   };
 
