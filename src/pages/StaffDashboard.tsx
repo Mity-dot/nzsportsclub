@@ -91,6 +91,8 @@ export default function StaffDashboard() {
   
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [members, setMembers] = useState<MemberWithRole[]>([]);
+  const [removedMembers, setRemovedMembers] = useState<MemberWithRole[]>([]);
+  const [showRemovedMembers, setShowRemovedMembers] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberWithRole | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
