@@ -115,6 +115,18 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [appId, isProductionDomain]);
 
+  // Periodically sync subscription state with browser permission (catches out-of-band changes)
+  useEffect(() => {
+    if (!isProductionDomain) return;
+    const interval = setInterval(() => {
+      if (window.OneSignal && typeof window.OneSignal.Notifications?.permission !== 'undefined') {
+        const perm = window.OneSignal.Notifications.permission;
+        setIsSubscribed(prev => prev !== perm ? perm : prev);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isProductionDomain]);
+
   // Set external user ID when user logs in (production only)
   useEffect(() => {
     if (!isInitialized || !user || userSetRef.current === user.id || !isProductionDomain) return;
