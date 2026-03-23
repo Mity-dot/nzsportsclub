@@ -122,9 +122,9 @@ const handler = async (req: Request): Promise<Response> => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const body: NotificationRequest = await req.json();
-    const { type, workoutId, workoutTitle, workoutTitleBg, workoutDate, workoutTime, targetUserIds, excludeUserIds } = body;
+    const { type, workoutId, workoutTitle, workoutTitleBg, workoutDate, workoutTime, targetUserIds, excludeUserIds, memberName } = body;
 
-    console.log("📨 Notification request:", { type, workoutId, workoutTitle, targetCount: targetUserIds?.length ?? 0 });
+    console.log("📨 Notification request:", { type, workoutId, workoutTitle, memberName, targetCount: targetUserIds?.length ?? 0 });
 
     // Determine which users to notify
     let userIdsToNotify: string[] = [];
@@ -141,7 +141,8 @@ const handler = async (req: Request): Promise<Response> => {
 
       const staffUserIds = new Set(staffRoles?.map(r => r.user_id) || []);
 
-      if (type === "workout_full") {
+      if (type === "workout_full" || type === "member_booked" || type === "member_cancelled") {
+        // Staff-only notifications
         userIdsToNotify = Array.from(staffUserIds);
       } else {
         userIdsToNotify = profiles?.filter(p => !staffUserIds.has(p.user_id)).map(p => p.user_id) || [];
