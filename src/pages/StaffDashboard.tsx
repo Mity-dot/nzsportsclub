@@ -152,6 +152,7 @@ export default function StaffDashboard() {
     fetchWorkouts();
     fetchMembers();
     fetchRemovedUsers();
+    if (isAdmin) {
       fetchPendingApprovals();
     }
   }, [isAdmin]);
