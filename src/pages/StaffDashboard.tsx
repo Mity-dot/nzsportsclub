@@ -1209,7 +1209,7 @@ export default function StaffDashboard() {
                         <Button variant="ghost" size="icon" onClick={() => openEditWorkout(workout)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteWorkout(workout.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmAction({ type: 'delete_workout', payload: workout.id, message: t('confirmDeleteWorkout') })}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
