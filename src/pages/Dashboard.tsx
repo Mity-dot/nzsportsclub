@@ -1054,6 +1054,17 @@ export default function Dashboard() {
                                 )}
                               </div>
                               
+                              {/* Countdown timer for booking opening */}
+                              {!isPassed && (reservationStatus.status === 'not_open' || (reservationStatus.status === 'priority' && !isCardMember)) && (
+                                <BookingCountdown 
+                                  targetDate={reservationStatus.opensAt}
+                                  label={reservationStatus.status === 'priority' 
+                                    ? (language === 'bg' ? 'Отваря за всички след' : 'Opens for all in') 
+                                    : undefined
+                                  }
+                                />
+                              )}
+                              
                               {getWorkoutDescription(workout) && (
                                 <p className="text-sm text-muted-foreground">
                                   {getWorkoutDescription(workout)}
