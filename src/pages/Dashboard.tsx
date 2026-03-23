@@ -579,13 +579,25 @@ export default function Dashboard() {
       toast({ title: t('bookingSuccess') });
       await refreshAll();
       
-      // Check if workout is now full and notify staff
+      // Notify staff about the booking
       if (workout) {
+        try {
+          await sendWorkoutNotification({
+            type: 'member_booked',
+            workoutId: workout.id,
+            workoutTitle: workout.title,
+            workoutTitleBg: workout.title_bg,
+            workoutDate: workout.workout_date,
+            workoutTime: workout.start_time?.slice(0, 5),
+            memberName: profile?.full_name || user.email || 'Unknown',
+          });
+        } catch {}
+
+        // Check if workout is now full and notify staff
         const { data: countData } = await supabase
           .rpc('get_reservation_count', { p_workout_id: workoutId });
         
         if (countData && countData >= workout.max_spots) {
-          // Notify when workout is full (unified notification handles staff targeting for this type)
           try {
             await sendWorkoutNotification({
               type: 'workout_full',
@@ -593,9 +605,7 @@ export default function Dashboard() {
               workoutTitle: workout.title,
               workoutTitleBg: workout.title_bg,
             });
-          } catch (e) {
-            console.log('Push notification failed');
-          }
+          } catch {}
         }
       }
     }
