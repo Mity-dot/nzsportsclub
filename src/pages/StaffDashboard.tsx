@@ -1346,50 +1346,51 @@ export default function StaffDashboard() {
               })}
             </div>
 
-            {/* Removed Members Section */}
-            <Separator className="my-4" />
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowRemovedMembers(!showRemovedMembers)}
-                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-3"
-              >
-                <UserX className="h-4 w-4" />
-                <span className="font-medium text-sm">
-                  {t('removedMembers')} ({removedMembers.length})
-                </span>
-                <ArrowDown className={`h-3 w-3 transition-transform ${showRemovedMembers ? 'rotate-180' : ''}`} />
-              </button>
-              
-              {showRemovedMembers && (
-                <div className="grid gap-3">
-                  {removedMembers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">{t('noRemovedMembers')}</p>
-                  ) : (
-                    removedMembers.map((member) => (
-                      <Card key={member.id} className="border-border/50 opacity-70">
-                        <CardContent className="p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div>
-                              <span className="font-medium">{member.full_name || 'Member'}</span>
-                              <p className="text-xs text-muted-foreground">{member.email}</p>
-                            </div>
+          </TabsContent>
+
+          {/* Removed Members Tab */}
+          <TabsContent value="removed" className="space-y-4">
+            <h2 className="font-display text-xl font-medium">{t('removedMembers')}</h2>
+            {loadingRemovedUsers ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : allRemovedUsers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">{t('noRemovedMembers')}</p>
+            ) : (
+              <div className="grid gap-3">
+                {allRemovedUsers.map((removedUser) => (
+                  <Card key={removedUser.user_id} className="border-border/50 opacity-80">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <span className="font-medium">{removedUser.full_name || 'Unknown'}</span>
+                          <p className="text-xs text-muted-foreground">{removedUser.email}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {removedUser.removed_at && (
+                              <span className="text-xs text-muted-foreground">
+                                {t('removedOn')}: {format(parseISO(removedUser.removed_at), 'MMM d, yyyy')}
+                              </span>
+                            )}
+                            <Badge variant={removedUser.is_hard_deleted ? 'destructive' : 'secondary'} className="text-xs">
+                              {removedUser.is_hard_deleted ? t('hardDeleted') : t('softDeleted')}
+                            </Badge>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestoreMember(member)}
-                          >
-                            <UserPlus className="h-4 w-4 mr-1" />
-                            {t('restoreMember')}
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmAction({ type: 'restore', payload: removedUser, message: t('confirmRestore') })}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        {t('restoreMember')}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* Pending Approvals Tab (Admin only) */}
