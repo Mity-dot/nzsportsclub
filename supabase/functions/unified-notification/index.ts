@@ -24,7 +24,8 @@ function getNotificationContent(
   titleBg: string | undefined | null,
   date: string | undefined,
   time: string | undefined,
-  language: string
+  language: string,
+  memberName?: string
 ): { title: string; body: string } {
   const isBg = language === 'bg';
   const displayTitle = title;
