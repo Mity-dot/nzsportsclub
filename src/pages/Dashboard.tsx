@@ -284,25 +284,28 @@ export default function Dashboard() {
     
     // Check if workout has passed
     if (isWorkoutPassed(workout)) {
-      return { status: 'passed', hoursUntil: 0 };
+      return { status: 'passed', hoursUntil: 0, opensAt: now };
     }
     
     const hoursUntilWorkout = differenceInHours(workoutDateTime, now);
     const reservationOpensHours = workout.reservation_opens_hours || 24;
     const priorityPeriodHours = reservationOpensHours / 2;
     
+    const opensAt = new Date(workoutDateTime.getTime() - reservationOpensHours * 60 * 60 * 1000);
+    const priorityEndsAt = new Date(workoutDateTime.getTime() - (reservationOpensHours - priorityPeriodHours) * 60 * 60 * 1000);
+    
     // Reservations not open yet
     if (hoursUntilWorkout > reservationOpensHours) {
-      return { status: 'not_open', hoursUntil: hoursUntilWorkout - reservationOpensHours };
+      return { status: 'not_open', hoursUntil: hoursUntilWorkout - reservationOpensHours, opensAt };
     }
     
     // Card member priority period (first half of reservation window)
     if (workout.card_priority_enabled && hoursUntilWorkout > reservationOpensHours - priorityPeriodHours) {
-      return { status: 'priority', hoursUntil: hoursUntilWorkout - (reservationOpensHours - priorityPeriodHours) };
+      return { status: 'priority', hoursUntil: hoursUntilWorkout - (reservationOpensHours - priorityPeriodHours), opensAt: priorityEndsAt };
     }
     
     // Open for all
-    return { status: 'open', hoursUntil: 0 };
+    return { status: 'open', hoursUntil: 0, opensAt: now };
   };
 
   const canReserve = (workout: Workout) => {
