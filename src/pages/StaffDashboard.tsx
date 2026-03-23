@@ -109,7 +109,8 @@ export default function StaffDashboard() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [members, setMembers] = useState<MemberWithRole[]>([]);
   const [removedMembers, setRemovedMembers] = useState<MemberWithRole[]>([]);
-  const [showRemovedMembers, setShowRemovedMembers] = useState(false);
+  const [allRemovedUsers, setAllRemovedUsers] = useState<RemovedUser[]>([]);
+  const [loadingRemovedUsers, setLoadingRemovedUsers] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberWithRole | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
@@ -121,6 +122,7 @@ export default function StaffDashboard() {
   const [manageMembersWaitingList, setManageMembersWaitingList] = useState<{ id: string; user_id: string; position: number; profiles?: Profile }[]>([]);
   const [manageMembersReservationCount, setManageMembersReservationCount] = useState<number>(0);
   const [autoReserving, setAutoReserving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   
   // Workout form
   const [showWorkoutDialog, setShowWorkoutDialog] = useState(false);
