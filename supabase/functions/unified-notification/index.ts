@@ -89,6 +89,20 @@ function getNotificationContent(
           ? `"${displayTitle}" започва в ${formattedTime} днес!`
           : `"${displayTitle}" starts at ${formattedTime} today!`,
       };
+    case "member_booked":
+      return {
+        title: isBg ? "📗 NZ Нова резервация" : "📗 NZ New Booking",
+        body: isBg 
+          ? `${memberName || 'Член'} резервира място за "${displayTitle}" ${formattedDate ? `на ${formattedDate}` : ''} ${formattedTime ? `в ${formattedTime}` : ''}`
+          : `${memberName || 'Member'} booked a spot for "${displayTitle}" ${formattedDate ? `on ${formattedDate}` : ''} ${formattedTime ? `at ${formattedTime}` : ''}`,
+      };
+    case "member_cancelled":
+      return {
+        title: isBg ? "📕 NZ Отказана резервация" : "📕 NZ Booking Cancelled",
+        body: isBg 
+          ? `${memberName || 'Член'} отказа резервация за "${displayTitle}" ${formattedDate ? `на ${formattedDate}` : ''} ${formattedTime ? `в ${formattedTime}` : ''}`
+          : `${memberName || 'Member'} cancelled their booking for "${displayTitle}" ${formattedDate ? `on ${formattedDate}` : ''} ${formattedTime ? `at ${formattedTime}` : ''}`,
+      };
     default:
       return {
         title: "NZ Sport Club",
