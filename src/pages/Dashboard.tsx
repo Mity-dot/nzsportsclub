@@ -636,8 +636,21 @@ export default function Dashboard() {
     } else {
       toast({ title: t('bookingCancelled') });
 
-      // Automatically promote from waiting list BEFORE refreshing counts (prevents temporary mismatches)
+      // Notify staff about the cancellation
       if (workout) {
+        try {
+          await sendWorkoutNotification({
+            type: 'member_cancelled',
+            workoutId: workout.id,
+            workoutTitle: workout.title,
+            workoutTitleBg: workout.title_bg,
+            workoutDate: workout.workout_date,
+            workoutTime: workout.start_time?.slice(0, 5),
+            memberName: profile?.full_name || user.email || 'Unknown',
+          });
+        } catch {}
+
+        // Automatically promote from waiting list
         try {
           const { data: promotedUserId, error: promoteError } = await supabase
             .rpc('promote_from_waiting_list', { p_workout_id: workoutId });
@@ -645,7 +658,6 @@ export default function Dashboard() {
           if (promotedUserId && !promoteError) {
             console.log('Promoted user from waiting list:', promotedUserId);
 
-            // Notify the promoted user
             await sendWorkoutNotification({
               type: 'waiting_list_promoted',
               workoutId: workout.id,
@@ -654,7 +666,6 @@ export default function Dashboard() {
               targetUserIds: [promotedUserId],
             });
           } else {
-            // No one on waiting list, send spot freed notification
             await sendWorkoutNotification({
               type: 'spot_freed',
               workoutId: workout.id,
