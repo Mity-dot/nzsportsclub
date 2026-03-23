@@ -1797,6 +1797,24 @@ export default function StaffDashboard() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Confirmation Dialog */}
+        <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('areYouSure')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction?.message}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={executeConfirmAction}>
+                {t('confirm')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );
