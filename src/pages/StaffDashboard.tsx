@@ -977,9 +977,13 @@ export default function StaffDashboard() {
         </h1>
 
         <Tabs defaultValue="workouts" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-grid">
+          <TabsList className="grid w-full grid-cols-4 sm:w-auto sm:inline-grid">
             <TabsTrigger value="workouts">{t('workouts')}</TabsTrigger>
             <TabsTrigger value="members">{t('manageMembers')}</TabsTrigger>
+            <TabsTrigger value="removed">
+              <UserX className="h-4 w-4 mr-1" />
+              {t('removedMembers')}
+            </TabsTrigger>
             {isAdmin && (
               <TabsTrigger value="approvals">
                 {t('pendingApprovals')}
