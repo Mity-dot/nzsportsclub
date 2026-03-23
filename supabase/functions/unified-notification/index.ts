@@ -173,8 +173,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 1. Insert in-app notifications
     const notificationRecords = userIdsToNotify.map(userId => {
-      const contentEn = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'en');
-      const contentBg = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'bg');
+      const contentEn = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'en', memberName);
+      const contentBg = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'bg', memberName);
       return {
         user_id: userId,
         workout_id: type === 'workout_deleted' ? null : workoutId,
