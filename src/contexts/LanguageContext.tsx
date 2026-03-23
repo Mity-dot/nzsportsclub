@@ -148,6 +148,16 @@ const translations: Translations = {
   restoreMember: { en: 'Restore Member', bg: 'Възстанови член' },
   noRemovedMembers: { en: 'No removed members', bg: 'Няма премахнати членове' },
   staffRemoved: { en: 'Staff removed successfully', bg: 'Персоналът е премахнат успешно' },
+  removedOn: { en: 'Removed on', bg: 'Премахнат на' },
+  hardDeleted: { en: 'Account deleted', bg: 'Акаунт изтрит' },
+  softDeleted: { en: 'Deactivated', bg: 'Деактивиран' },
+  confirmRemoveMember: { en: 'Are you sure you want to remove this member? They will be deactivated and moved to the removed members list.', bg: 'Сигурни ли сте, че искате да премахнете този член? Той ще бъде деактивиран и преместен в списъка с премахнати членове.' },
+  confirmDeleteWorkout: { en: 'Are you sure you want to delete this workout? All reservations will be cancelled and members will be notified.', bg: 'Сигурни ли сте, че искате да изтриете тази тренировка? Всички резервации ще бъдат отменени и членовете ще бъдат уведомени.' },
+  confirmRemoveStaff: { en: 'Are you sure you want to remove this staff member? They will lose staff access.', bg: 'Сигурни ли сте, че искате да премахнете този служител? Той ще загуби достъпа на персонал.' },
+  confirmDeactivate: { en: 'Are you sure you want to deactivate this member? They will not be able to book workouts.', bg: 'Сигурни ли сте, че искате да деактивирате този член? Той няма да може да резервира тренировки.' },
+  confirmDemote: { en: 'Are you sure you want to demote this card member to regular member?', bg: 'Сигурни ли сте, че искате да понижите този картов член до обикновен член?' },
+  confirmRestore: { en: 'Are you sure you want to restore this member? They will regain access to the app.', bg: 'Сигурни ли сте, че искате да възстановите този член? Той ще получи отново достъп до приложението.' },
+  areYouSure: { en: 'Are you sure?', bg: 'Сигурни ли сте?' },
   
   // Profile editor
   cardPhoto: { en: 'Card Photo', bg: 'Снимка на карта' },

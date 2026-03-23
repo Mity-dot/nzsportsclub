@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -24,7 +25,7 @@ import {
   UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2, UsersRound, Sunrise, Moon
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { motion } from 'framer-motion';
+
 
 interface Workout {
   id: string;
@@ -84,6 +85,21 @@ interface MemberWithRole extends Profile {
   roles: UserRole[];
 }
 
+interface RemovedUser {
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  removed_at: string | null;
+  member_type: string;
+  is_hard_deleted: boolean;
+}
+
+interface ConfirmAction {
+  type: 'remove' | 'delete_workout' | 'remove_staff' | 'deactivate' | 'demote' | 'restore';
+  payload: any;
+  message: string;
+}
+
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
@@ -93,7 +109,8 @@ export default function StaffDashboard() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [members, setMembers] = useState<MemberWithRole[]>([]);
   const [removedMembers, setRemovedMembers] = useState<MemberWithRole[]>([]);
-  const [showRemovedMembers, setShowRemovedMembers] = useState(false);
+  const [allRemovedUsers, setAllRemovedUsers] = useState<RemovedUser[]>([]);
+  const [loadingRemovedUsers, setLoadingRemovedUsers] = useState(false);
   const [selectedMember, setSelectedMember] = useState<MemberWithRole | null>(null);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApproval[]>([]);
   const [selectedWorkout, setSelectedWorkout] = useState<Workout | null>(null);
@@ -105,6 +122,7 @@ export default function StaffDashboard() {
   const [manageMembersWaitingList, setManageMembersWaitingList] = useState<{ id: string; user_id: string; position: number; profiles?: Profile }[]>([]);
   const [manageMembersReservationCount, setManageMembersReservationCount] = useState<number>(0);
   const [autoReserving, setAutoReserving] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   
   // Workout form
   const [showWorkoutDialog, setShowWorkoutDialog] = useState(false);
@@ -133,6 +151,7 @@ export default function StaffDashboard() {
   useEffect(() => {
     fetchWorkouts();
     fetchMembers();
+    fetchRemovedUsers();
     if (isAdmin) {
       fetchPendingApprovals();
     }
@@ -170,6 +189,61 @@ export default function StaffDashboard() {
       // Split into active and removed
       setMembers(allMembers.filter(m => !m.removed_at));
       setRemovedMembers(allMembers.filter(m => !!m.removed_at));
+    }
+  };
+
+  const fetchRemovedUsers = async () => {
+    setLoadingRemovedUsers(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('list-removed-users');
+      if (!error && data?.users) {
+        setAllRemovedUsers(data.users);
+      }
+    } catch (e) {
+      console.error('Failed to fetch removed users:', e);
+    } finally {
+      setLoadingRemovedUsers(false);
+    }
+  };
+
+  const handleRestoreRemovedUser = async (removedUser: RemovedUser) => {
+    try {
+      const { error } = await supabase.functions.invoke('restore-member', {
+        body: { userId: removedUser.user_id, isHardDeleted: removedUser.is_hard_deleted }
+      });
+      if (error) throw error;
+      toast({ title: t('memberRestored') });
+      fetchRemovedUsers();
+      fetchMembers();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    }
+  };
+
+  const executeConfirmAction = async () => {
+    if (!confirmAction) return;
+    const { type, payload } = confirmAction;
+    setConfirmAction(null);
+    
+    switch (type) {
+      case 'remove':
+        await handleRemoveMember(payload);
+        break;
+      case 'delete_workout':
+        await handleDeleteWorkout(payload);
+        break;
+      case 'remove_staff':
+        await handleRemoveStaff(payload);
+        break;
+      case 'deactivate':
+        await handleDeactivateMember(payload);
+        break;
+      case 'demote':
+        await handleDemoteToMember(payload);
+        break;
+      case 'restore':
+        await handleRestoreRemovedUser(payload);
+        break;
     }
   };
 
@@ -903,9 +977,13 @@ export default function StaffDashboard() {
         </h1>
 
         <Tabs defaultValue="workouts" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 sm:w-auto sm:inline-grid">
+          <TabsList className="grid w-full grid-cols-4 sm:w-auto sm:inline-grid">
             <TabsTrigger value="workouts">{t('workouts')}</TabsTrigger>
             <TabsTrigger value="members">{t('manageMembers')}</TabsTrigger>
+            <TabsTrigger value="removed">
+              <UserX className="h-4 w-4 mr-1" />
+              {t('removedMembers')}
+            </TabsTrigger>
             {isAdmin && (
               <TabsTrigger value="approvals">
                 {t('pendingApprovals')}
@@ -1131,7 +1209,7 @@ export default function StaffDashboard() {
                         <Button variant="ghost" size="icon" onClick={() => openEditWorkout(workout)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteWorkout(workout.id)}>
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmAction({ type: 'delete_workout', payload: workout.id, message: t('confirmDeleteWorkout') })}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
@@ -1229,7 +1307,7 @@ export default function StaffDashboard() {
                                 <ArrowUp className="h-4 w-4 mr-2" />
                                 {t('promoteToCard')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDeactivateMember(member)}>
+                              <DropdownMenuItem onClick={() => setConfirmAction({ type: 'deactivate', payload: member, message: t('confirmDeactivate') })}>
                                 <UserX className="h-4 w-4 mr-2" />
                                 {t('deactivate')}
                               </DropdownMenuItem>
@@ -1237,24 +1315,24 @@ export default function StaffDashboard() {
                           )}
                           {status === 'card' && (
                             <>
-                              <DropdownMenuItem onClick={() => handleDemoteToMember(member)}>
+                              <DropdownMenuItem onClick={() => setConfirmAction({ type: 'demote', payload: member, message: t('confirmDemote') })}>
                                 <ArrowDown className="h-4 w-4 mr-2" />
                                 {t('demoteToMember')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDeactivateMember(member)}>
+                              <DropdownMenuItem onClick={() => setConfirmAction({ type: 'deactivate', payload: member, message: t('confirmDeactivate') })}>
                                 <UserX className="h-4 w-4 mr-2" />
                                 {t('deactivate')}
                               </DropdownMenuItem>
                             </>
                           )}
                           {status === 'staff' && (
-                            <DropdownMenuItem onClick={() => handleRemoveStaff(member)}>
+                            <DropdownMenuItem onClick={() => setConfirmAction({ type: 'remove_staff', payload: member, message: t('confirmRemoveStaff') })}>
                               <UserMinus className="h-4 w-4 mr-2" />
                               {t('removeStaff')}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem 
-                            onClick={() => handleRemoveMember(member)}
+                            onClick={() => setConfirmAction({ type: 'remove', payload: member, message: t('confirmRemoveMember') })}
                             className="text-destructive"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
@@ -1268,50 +1346,51 @@ export default function StaffDashboard() {
               })}
             </div>
 
-            {/* Removed Members Section */}
-            <Separator className="my-4" />
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowRemovedMembers(!showRemovedMembers)}
-                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-3"
-              >
-                <UserX className="h-4 w-4" />
-                <span className="font-medium text-sm">
-                  {t('removedMembers')} ({removedMembers.length})
-                </span>
-                <ArrowDown className={`h-3 w-3 transition-transform ${showRemovedMembers ? 'rotate-180' : ''}`} />
-              </button>
-              
-              {showRemovedMembers && (
-                <div className="grid gap-3">
-                  {removedMembers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">{t('noRemovedMembers')}</p>
-                  ) : (
-                    removedMembers.map((member) => (
-                      <Card key={member.id} className="border-border/50 opacity-70">
-                        <CardContent className="p-4 flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div>
-                              <span className="font-medium">{member.full_name || 'Member'}</span>
-                              <p className="text-xs text-muted-foreground">{member.email}</p>
-                            </div>
+          </TabsContent>
+
+          {/* Removed Members Tab */}
+          <TabsContent value="removed" className="space-y-4">
+            <h2 className="font-display text-xl font-medium">{t('removedMembers')}</h2>
+            {loadingRemovedUsers ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : allRemovedUsers.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">{t('noRemovedMembers')}</p>
+            ) : (
+              <div className="grid gap-3">
+                {allRemovedUsers.map((removedUser) => (
+                  <Card key={removedUser.user_id} className="border-border/50 opacity-80">
+                    <CardContent className="p-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div>
+                          <span className="font-medium">{removedUser.full_name || 'Unknown'}</span>
+                          <p className="text-xs text-muted-foreground">{removedUser.email}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            {removedUser.removed_at && (
+                              <span className="text-xs text-muted-foreground">
+                                {t('removedOn')}: {format(parseISO(removedUser.removed_at), 'MMM d, yyyy')}
+                              </span>
+                            )}
+                            <Badge variant={removedUser.is_hard_deleted ? 'destructive' : 'secondary'} className="text-xs">
+                              {removedUser.is_hard_deleted ? t('hardDeleted') : t('softDeleted')}
+                            </Badge>
                           </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestoreMember(member)}
-                          >
-                            <UserPlus className="h-4 w-4 mr-1" />
-                            {t('restoreMember')}
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    ))
-                  )}
-                </div>
-              )}
-            </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setConfirmAction({ type: 'restore', payload: removedUser, message: t('confirmRestore') })}
+                      >
+                        <UserPlus className="h-4 w-4 mr-1" />
+                        {t('restoreMember')}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* Pending Approvals Tab (Admin only) */}
@@ -1718,6 +1797,24 @@ export default function StaffDashboard() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Confirmation Dialog */}
+        <AlertDialog open={!!confirmAction} onOpenChange={(open) => !open && setConfirmAction(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('areYouSure')}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction?.message}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction onClick={executeConfirmAction}>
+                {t('confirm')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </main>
     </div>
   );
