@@ -25,7 +25,7 @@ import {
   UserCheck, CheckCircle, XCircle, Crown, MoreVertical, ArrowUp, ArrowDown, UserMinus, UserPlus, UserX, Camera, Loader2, UsersRound, Sunrise, Moon
 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import { motion } from 'framer-motion';
+
 
 interface Workout {
   id: string;
