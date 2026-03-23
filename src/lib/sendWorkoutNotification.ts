@@ -1,7 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 
 export type WorkoutNotificationRequest = {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder" | "member_booked" | "member_cancelled";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
@@ -9,6 +9,7 @@ export type WorkoutNotificationRequest = {
   workoutTime?: string;
   targetUserIds?: string[];
   excludeUserIds?: string[];
+  memberName?: string;
 };
 
 /**

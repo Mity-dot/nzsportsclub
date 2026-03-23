@@ -67,6 +67,8 @@ export function NotificationSettings() {
       case 'workout_reminder': return '⏰';
       case 'auto_reserved': return '🎫';
       case 'waiting_list_promoted': return '🎉';
+      case 'member_booked': return '📗';
+      case 'member_cancelled': return '📕';
       default: return '🔔';
     }
   };

@@ -8,6 +8,7 @@ import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { NotificationSettings } from '@/components/NotificationSettings';
 import { MemberProfileEditor } from '@/components/MemberProfileEditor';
+import { BookingCountdown } from '@/components/BookingCountdown';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -283,25 +284,28 @@ export default function Dashboard() {
     
     // Check if workout has passed
     if (isWorkoutPassed(workout)) {
-      return { status: 'passed', hoursUntil: 0 };
+      return { status: 'passed', hoursUntil: 0, opensAt: now };
     }
     
     const hoursUntilWorkout = differenceInHours(workoutDateTime, now);
     const reservationOpensHours = workout.reservation_opens_hours || 24;
     const priorityPeriodHours = reservationOpensHours / 2;
     
+    const opensAt = new Date(workoutDateTime.getTime() - reservationOpensHours * 60 * 60 * 1000);
+    const priorityEndsAt = new Date(workoutDateTime.getTime() - (reservationOpensHours - priorityPeriodHours) * 60 * 60 * 1000);
+    
     // Reservations not open yet
     if (hoursUntilWorkout > reservationOpensHours) {
-      return { status: 'not_open', hoursUntil: hoursUntilWorkout - reservationOpensHours };
+      return { status: 'not_open', hoursUntil: hoursUntilWorkout - reservationOpensHours, opensAt };
     }
     
     // Card member priority period (first half of reservation window)
     if (workout.card_priority_enabled && hoursUntilWorkout > reservationOpensHours - priorityPeriodHours) {
-      return { status: 'priority', hoursUntil: hoursUntilWorkout - (reservationOpensHours - priorityPeriodHours) };
+      return { status: 'priority', hoursUntil: hoursUntilWorkout - (reservationOpensHours - priorityPeriodHours), opensAt: priorityEndsAt };
     }
     
     // Open for all
-    return { status: 'open', hoursUntil: 0 };
+    return { status: 'open', hoursUntil: 0, opensAt: now };
   };
 
   const canReserve = (workout: Workout) => {
@@ -575,13 +579,25 @@ export default function Dashboard() {
       toast({ title: t('bookingSuccess') });
       await refreshAll();
       
-      // Check if workout is now full and notify staff
+      // Notify staff about the booking
       if (workout) {
+        try {
+          await sendWorkoutNotification({
+            type: 'member_booked',
+            workoutId: workout.id,
+            workoutTitle: workout.title,
+            workoutTitleBg: workout.title_bg,
+            workoutDate: workout.workout_date,
+            workoutTime: workout.start_time?.slice(0, 5),
+            memberName: profile?.full_name || user.email || 'Unknown',
+          });
+        } catch {}
+
+        // Check if workout is now full and notify staff
         const { data: countData } = await supabase
           .rpc('get_reservation_count', { p_workout_id: workoutId });
         
         if (countData && countData >= workout.max_spots) {
-          // Notify when workout is full (unified notification handles staff targeting for this type)
           try {
             await sendWorkoutNotification({
               type: 'workout_full',
@@ -589,9 +605,7 @@ export default function Dashboard() {
               workoutTitle: workout.title,
               workoutTitleBg: workout.title_bg,
             });
-          } catch (e) {
-            console.log('Push notification failed');
-          }
+          } catch {}
         }
       }
     }
@@ -622,8 +636,21 @@ export default function Dashboard() {
     } else {
       toast({ title: t('bookingCancelled') });
 
-      // Automatically promote from waiting list BEFORE refreshing counts (prevents temporary mismatches)
+      // Notify staff about the cancellation
       if (workout) {
+        try {
+          await sendWorkoutNotification({
+            type: 'member_cancelled',
+            workoutId: workout.id,
+            workoutTitle: workout.title,
+            workoutTitleBg: workout.title_bg,
+            workoutDate: workout.workout_date,
+            workoutTime: workout.start_time?.slice(0, 5),
+            memberName: profile?.full_name || user.email || 'Unknown',
+          });
+        } catch {}
+
+        // Automatically promote from waiting list
         try {
           const { data: promotedUserId, error: promoteError } = await supabase
             .rpc('promote_from_waiting_list', { p_workout_id: workoutId });
@@ -631,7 +658,6 @@ export default function Dashboard() {
           if (promotedUserId && !promoteError) {
             console.log('Promoted user from waiting list:', promotedUserId);
 
-            // Notify the promoted user
             await sendWorkoutNotification({
               type: 'waiting_list_promoted',
               workoutId: workout.id,
@@ -640,7 +666,6 @@ export default function Dashboard() {
               targetUserIds: [promotedUserId],
             });
           } else {
-            // No one on waiting list, send spot freed notification
             await sendWorkoutNotification({
               type: 'spot_freed',
               workoutId: workout.id,
@@ -1028,6 +1053,17 @@ export default function Dashboard() {
                                   </Badge>
                                 )}
                               </div>
+                              
+                              {/* Countdown timer for booking opening */}
+                              {!isPassed && (reservationStatus.status === 'not_open' || (reservationStatus.status === 'priority' && !isCardMember)) && (
+                                <BookingCountdown 
+                                  targetDate={reservationStatus.opensAt}
+                                  label={reservationStatus.status === 'priority' 
+                                    ? (language === 'bg' ? 'Отваря за всички след' : 'Opens for all in') 
+                                    : undefined
+                                  }
+                                />
+                              )}
                               
                               {getWorkoutDescription(workout) && (
                                 <p className="text-sm text-muted-foreground">

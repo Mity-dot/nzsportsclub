@@ -115,6 +115,18 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [appId, isProductionDomain]);
 
+  // Periodically sync subscription state with browser permission (catches out-of-band changes)
+  useEffect(() => {
+    if (!isProductionDomain) return;
+    const interval = setInterval(() => {
+      if (window.OneSignal && typeof window.OneSignal.Notifications?.permission !== 'undefined') {
+        const perm = window.OneSignal.Notifications.permission;
+        setIsSubscribed(prev => prev !== perm ? perm : prev);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [isProductionDomain]);
+
   // Set external user ID when user logs in (production only)
   useEffect(() => {
     if (!isInitialized || !user || userSetRef.current === user.id || !isProductionDomain) return;
@@ -138,6 +150,20 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    // Use OneSignal directly if already loaded (avoids deferred queue delay)
+    if (window.OneSignal && typeof window.OneSignal.Notifications?.requestPermission === 'function') {
+      try {
+        await window.OneSignal.Notifications.requestPermission();
+        const permission = window.OneSignal.Notifications.permission;
+        setIsSubscribed(permission);
+        return;
+      } catch (error) {
+        console.error('Error requesting notification permission:', error);
+        return;
+      }
+    }
+
+    // Fallback to deferred queue if SDK not yet ready
     return new Promise<void>((resolve) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       window.OneSignalDeferred?.push(async function(OneSignal: any) {

@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 interface NotificationRequest {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder" | "member_booked" | "member_cancelled";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
@@ -15,6 +15,7 @@ interface NotificationRequest {
   workoutTime?: string;
   targetUserIds?: string[];
   excludeUserIds?: string[];
+  memberName?: string;
 }
 
 function getNotificationContent(
@@ -23,7 +24,8 @@ function getNotificationContent(
   titleBg: string | undefined | null,
   date: string | undefined,
   time: string | undefined,
-  language: string
+  language: string,
+  memberName?: string
 ): { title: string; body: string } {
   const isBg = language === 'bg';
   const displayTitle = title;
@@ -87,6 +89,20 @@ function getNotificationContent(
           ? `"${displayTitle}" започва в ${formattedTime} днес!`
           : `"${displayTitle}" starts at ${formattedTime} today!`,
       };
+    case "member_booked":
+      return {
+        title: isBg ? "📗 NZ Нова резервация" : "📗 NZ New Booking",
+        body: isBg 
+          ? `${memberName || 'Член'} резервира място за "${displayTitle}" ${formattedDate ? `на ${formattedDate}` : ''} ${formattedTime ? `в ${formattedTime}` : ''}`
+          : `${memberName || 'Member'} booked a spot for "${displayTitle}" ${formattedDate ? `on ${formattedDate}` : ''} ${formattedTime ? `at ${formattedTime}` : ''}`,
+      };
+    case "member_cancelled":
+      return {
+        title: isBg ? "📕 NZ Отказана резервация" : "📕 NZ Booking Cancelled",
+        body: isBg 
+          ? `${memberName || 'Член'} отказа резервация за "${displayTitle}" ${formattedDate ? `на ${formattedDate}` : ''} ${formattedTime ? `в ${formattedTime}` : ''}`
+          : `${memberName || 'Member'} cancelled their booking for "${displayTitle}" ${formattedDate ? `on ${formattedDate}` : ''} ${formattedTime ? `at ${formattedTime}` : ''}`,
+      };
     default:
       return {
         title: "NZ Sport Club",
@@ -106,9 +122,9 @@ const handler = async (req: Request): Promise<Response> => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     const body: NotificationRequest = await req.json();
-    const { type, workoutId, workoutTitle, workoutTitleBg, workoutDate, workoutTime, targetUserIds, excludeUserIds } = body;
+    const { type, workoutId, workoutTitle, workoutTitleBg, workoutDate, workoutTime, targetUserIds, excludeUserIds, memberName } = body;
 
-    console.log("📨 Notification request:", { type, workoutId, workoutTitle, targetCount: targetUserIds?.length ?? 0 });
+    console.log("📨 Notification request:", { type, workoutId, workoutTitle, memberName, targetCount: targetUserIds?.length ?? 0 });
 
     // Determine which users to notify
     let userIdsToNotify: string[] = [];
@@ -125,7 +141,8 @@ const handler = async (req: Request): Promise<Response> => {
 
       const staffUserIds = new Set(staffRoles?.map(r => r.user_id) || []);
 
-      if (type === "workout_full") {
+      if (type === "workout_full" || type === "member_booked" || type === "member_cancelled") {
+        // Staff-only notifications
         userIdsToNotify = Array.from(staffUserIds);
       } else {
         userIdsToNotify = profiles?.filter(p => !staffUserIds.has(p.user_id)).map(p => p.user_id) || [];
@@ -156,8 +173,8 @@ const handler = async (req: Request): Promise<Response> => {
 
     // 1. Insert in-app notifications
     const notificationRecords = userIdsToNotify.map(userId => {
-      const contentEn = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'en');
-      const contentBg = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'bg');
+      const contentEn = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'en', memberName);
+      const contentBg = getNotificationContent(type, workoutTitle, workoutTitleBg, workoutDate, workoutTime, 'bg', memberName);
       return {
         user_id: userId,
         workout_id: type === 'workout_deleted' ? null : workoutId,
@@ -216,8 +233,8 @@ async function sendViaOneSignal(
     else enUsers.push(id);
   });
 
-  const contentEn = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'en');
-  const contentBg = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'bg');
+  const contentEn = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'en', body.memberName);
+  const contentBg = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'bg', body.memberName);
 
   // Send to each language group
   for (const [users, content] of [[enUsers, contentEn], [bgUsers, contentBg]] as [string[], { title: string; body: string }][]) {
