@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock, Loader2, Bell, BellRing } from 'lucide-react';
 import { useOneSignal } from '@/components/OneSignalProvider';
-import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours, differenceInMilliseconds, isBefore } from 'date-fns';
+import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours, isBefore } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Workout {
