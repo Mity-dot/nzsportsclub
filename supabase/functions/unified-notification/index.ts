@@ -7,7 +7,7 @@ const corsHeaders = {
 };
 
 interface NotificationRequest {
-  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder";
+  type: "new_workout" | "workout_updated" | "workout_deleted" | "spot_freed" | "workout_full" | "auto_reserved" | "waiting_list_promoted" | "workout_reminder" | "member_booked" | "member_cancelled";
   workoutId: string;
   workoutTitle: string;
   workoutTitleBg?: string | null;
@@ -15,6 +15,7 @@ interface NotificationRequest {
   workoutTime?: string;
   targetUserIds?: string[];
   excludeUserIds?: string[];
+  memberName?: string;
 }
 
 function getNotificationContent(
