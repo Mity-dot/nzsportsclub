@@ -85,6 +85,21 @@ interface MemberWithRole extends Profile {
   roles: UserRole[];
 }
 
+interface RemovedUser {
+  user_id: string;
+  full_name: string | null;
+  email: string;
+  removed_at: string | null;
+  member_type: string;
+  is_hard_deleted: boolean;
+}
+
+interface ConfirmAction {
+  type: 'remove' | 'delete_workout' | 'remove_staff' | 'deactivate' | 'demote' | 'restore';
+  payload: any;
+  message: string;
+}
+
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
