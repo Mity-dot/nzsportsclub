@@ -151,7 +151,7 @@ export default function StaffDashboard() {
   useEffect(() => {
     fetchWorkouts();
     fetchMembers();
-    if (isAdmin) {
+    fetchRemovedUsers();
       fetchPendingApprovals();
     }
   }, [isAdmin]);
