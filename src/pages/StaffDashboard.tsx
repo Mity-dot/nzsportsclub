@@ -1307,7 +1307,7 @@ export default function StaffDashboard() {
                                 <ArrowUp className="h-4 w-4 mr-2" />
                                 {t('promoteToCard')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDeactivateMember(member)}>
+                              <DropdownMenuItem onClick={() => setConfirmAction({ type: 'deactivate', payload: member, message: t('confirmDeactivate') })}>
                                 <UserX className="h-4 w-4 mr-2" />
                                 {t('deactivate')}
                               </DropdownMenuItem>
@@ -1315,24 +1315,24 @@ export default function StaffDashboard() {
                           )}
                           {status === 'card' && (
                             <>
-                              <DropdownMenuItem onClick={() => handleDemoteToMember(member)}>
+                              <DropdownMenuItem onClick={() => setConfirmAction({ type: 'demote', payload: member, message: t('confirmDemote') })}>
                                 <ArrowDown className="h-4 w-4 mr-2" />
                                 {t('demoteToMember')}
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleDeactivateMember(member)}>
+                              <DropdownMenuItem onClick={() => setConfirmAction({ type: 'deactivate', payload: member, message: t('confirmDeactivate') })}>
                                 <UserX className="h-4 w-4 mr-2" />
                                 {t('deactivate')}
                               </DropdownMenuItem>
                             </>
                           )}
                           {status === 'staff' && (
-                            <DropdownMenuItem onClick={() => handleRemoveStaff(member)}>
+                            <DropdownMenuItem onClick={() => setConfirmAction({ type: 'remove_staff', payload: member, message: t('confirmRemoveStaff') })}>
                               <UserMinus className="h-4 w-4 mr-2" />
                               {t('removeStaff')}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem 
-                            onClick={() => handleRemoveMember(member)}
+                            onClick={() => setConfirmAction({ type: 'remove', payload: member, message: t('confirmRemoveMember') })}
                             className="text-destructive"
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
