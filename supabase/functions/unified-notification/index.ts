@@ -233,8 +233,8 @@ async function sendViaOneSignal(
     else enUsers.push(id);
   });
 
-  const contentEn = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'en');
-  const contentBg = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'bg');
+  const contentEn = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'en', body.memberName);
+  const contentBg = getNotificationContent(body.type, body.workoutTitle, body.workoutTitleBg, body.workoutDate, body.workoutTime, 'bg', body.memberName);
 
   // Send to each language group
   for (const [users, content] of [[enUsers, contentEn], [bgUsers, contentBg]] as [string[], { title: string; body: string }][]) {
