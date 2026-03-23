@@ -192,6 +192,61 @@ export default function StaffDashboard() {
     }
   };
 
+  const fetchRemovedUsers = async () => {
+    setLoadingRemovedUsers(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('list-removed-users');
+      if (!error && data?.users) {
+        setAllRemovedUsers(data.users);
+      }
+    } catch (e) {
+      console.error('Failed to fetch removed users:', e);
+    } finally {
+      setLoadingRemovedUsers(false);
+    }
+  };
+
+  const handleRestoreRemovedUser = async (removedUser: RemovedUser) => {
+    try {
+      const { data, error } = await supabase.functions.invoke('restore-member', {
+        body: { userId: removedUser.user_id, isHardDeleted: removedUser.is_hard_deleted }
+      });
+      if (error) throw error;
+      toast({ title: t('memberRestored') });
+      fetchRemovedUsers();
+      fetchMembers();
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: 'Error', description: e.message });
+    }
+  };
+
+  const executeConfirmAction = async () => {
+    if (!confirmAction) return;
+    const { type, payload } = confirmAction;
+    setConfirmAction(null);
+    
+    switch (type) {
+      case 'remove':
+        await handleRemoveMember(payload);
+        break;
+      case 'delete_workout':
+        await handleDeleteWorkout(payload);
+        break;
+      case 'remove_staff':
+        await handleRemoveStaff(payload);
+        break;
+      case 'deactivate':
+        await handleDeactivateMember(payload);
+        break;
+      case 'demote':
+        await handleDemoteToMember(payload);
+        break;
+      case 'restore':
+        await handleRestoreRemovedUser(payload);
+        break;
+    }
+  };
+
   const fetchPendingApprovals = async () => {
     const { data } = await supabase
       .from('pending_staff_approvals')
