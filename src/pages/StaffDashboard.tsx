@@ -208,7 +208,7 @@ export default function StaffDashboard() {
 
   const handleRestoreRemovedUser = async (removedUser: RemovedUser) => {
     try {
-      const { data, error } = await supabase.functions.invoke('restore-member', {
+      const { error } = await supabase.functions.invoke('restore-member', {
         body: { userId: removedUser.user_id, isHardDeleted: removedUser.is_hard_deleted }
       });
       if (error) throw error;
