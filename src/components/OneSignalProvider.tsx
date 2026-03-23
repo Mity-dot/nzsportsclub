@@ -138,6 +138,20 @@ export const OneSignalProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    // Use OneSignal directly if already loaded (avoids deferred queue delay)
+    if (window.OneSignal && typeof window.OneSignal.Notifications?.requestPermission === 'function') {
+      try {
+        await window.OneSignal.Notifications.requestPermission();
+        const permission = window.OneSignal.Notifications.permission;
+        setIsSubscribed(permission);
+        return;
+      } catch (error) {
+        console.error('Error requesting notification permission:', error);
+        return;
+      }
+    }
+
+    // Fallback to deferred queue if SDK not yet ready
     return new Promise<void>((resolve) => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       window.OneSignalDeferred?.push(async function(OneSignal: any) {
