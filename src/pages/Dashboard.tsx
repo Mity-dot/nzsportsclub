@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,6 +8,7 @@ import { Logo } from '@/components/Logo';
 import { LanguageSelector } from '@/components/LanguageSelector';
 import { NotificationSettings } from '@/components/NotificationSettings';
 import { MemberProfileEditor } from '@/components/MemberProfileEditor';
+import { BookingCountdown } from '@/components/BookingCountdown';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +16,7 @@ import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, Clock, Users, ChevronLeft, ChevronRight, LogOut, Settings, Crown, Lock, Loader2, Bell, BellRing } from 'lucide-react';
 import { useOneSignal } from '@/components/OneSignalProvider';
-import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours, isBefore } from 'date-fns';
+import { format, addDays, startOfWeek, isSameDay, parseISO, getDay, getMonth, differenceInHours, differenceInMilliseconds, isBefore } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface Workout {
